@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MPL — Mobile Premier League</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ░░ HEADER ░░ -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-badge">MPL</div>
+        <div class="brand-text">
+          <span class="brand-title">Mobile Premier League</span>
+          <span class="brand-sub">Official Standings</span>
+        </div>
+      </div>
+      <nav class="header-nav">
+        <button class="nav-btn active" data-view="standings">Standings</button>
+        <button class="nav-btn" data-view="leagues">Leagues</button>
+        <button class="btn-admin-trigger" id="adminTrigger">⚙ Admin</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ░░ MAIN ░░ -->
+  <main class="main-wrap">
+
+    <!-- League selector bar -->
+    <div class="league-bar" id="leagueBar">
+      <div class="league-tabs" id="leagueTabs">
+        <!-- tabs injected by JS -->
+      </div>
+    </div>
+
+    <!-- ── STANDINGS VIEW ── -->
+    <section class="view active" id="viewStandings">
+      <div class="section-head">
+        <h2 class="section-title" id="activeLeagueName">Select a League</h2>
+        <div class="legend">
+          <span class="leg-item"><span class="dot cl"></span>Champions League</span>
+          <span class="leg-item"><span class="dot el"></span>Europa League</span>
+          <span class="leg-item"><span class="dot rel"></span>Relegation</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="standings-table" id="standingsTable">
+          <thead>
+            <tr>
+              <th class="col-pos">#</th>
+              <th class="col-team">Club</th>
+              <th>P</th>
+              <th>W</th>
+              <th>D</th>
+              <th>L</th>
+              <th>GF</th>
+              <th>GA</th>
+              <th>GD</th>
+              <th class="col-pts">Pts</th>
+              <th class="col-form">Form</th>
+            </tr>
+          </thead>
+          <tbody id="standingsBody">
+            <tr class="empty-row">
+              <td colspan="11">No league selected — pick one above or create one in Admin.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── LEAGUES VIEW ── -->
+    <section class="view" id="viewLeagues">
+      <div class="section-head">
+        <h2 class="section-title">All Leagues</h2>
+      </div>
+      <div class="leagues-grid" id="leaguesGrid">
+        <!-- cards injected -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ░░ ADMIN PANEL ░░ -->
+  <div class="overlay" id="overlay"></div>
+
+  <aside class="admin-panel" id="adminPanel">
+    <div class="panel-header">
+      <span class="panel-title">Admin Panel</span>
+      <button class="panel-close" id="panelClose">✕</button>
+    </div>
+
+    <!-- Login gate -->
+    <div class="admin-gate" id="adminGate">
+      <p class="gate-label">Enter admin password</p>
+      <div class="gate-row">
+        <input type="password" id="adminPwInput" class="gate-input" placeholder="Password" />
+        <button class="btn-primary" id="adminLoginBtn">Unlock</button>
+      </div>
+      <p class="gate-hint">Default: 1234</p>
+      <p class="gate-error hidden" id="gateError">Wrong password. Try again.</p>
+    </div>
+
+    <!-- Admin workspace -->
+    <div class="admin-workspace hidden" id="adminWorkspace">
+
+      <div class="admin-logout-bar">
+        <span class="logged-in-tag">🔓 Admin Mode</span>
+        <button class="btn-ghost-sm" id="adminLogout">Lock</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="admin-tabs">
+        <button class="atab active" data-atab="leagues">Leagues</button>
+        <button class="atab" data-atab="teams">Teams</button>
+        <button class="atab" data-atab="results">Match Result</button>
+      </div>
+
+      <!-- ── LEAGUES TAB ── -->
+      <div class="atab-content active" id="atab-leagues">
+        <h3 class="atab-heading">Create New League</h3>
+        <input type="text" id="newLeagueName" class="field" placeholder="e.g. MPL Season 1" />
+        <input type="text" id="newLeagueSeason" class="field" placeholder="Season / Year (optional)" />
+        <button class="btn-primary full" id="createLeagueBtn">+ Create League</button>
+
+        <h3 class="atab-heading mt">Existing Leagues</h3>
+        <div id="adminLeagueList" class="admin-list">
+          <!-- injected -->
+        </div>
+      </div>
+
+      <!-- ── TEAMS TAB ── -->
+      <div class="atab-content" id="atab-teams">
+        <h3 class="atab-heading">Add Team to League</h3>
+        <select id="teamLeaguePicker" class="field"></select>
+        <input type="text" id="newTeamName" class="field" placeholder="Team name" />
+        <input type="text" id="newTeamShort" class="field" placeholder="Short code (3 letters, e.g. MCI)" maxlength="3" />
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="color" id="newTeamColor" class="field-color" value="#9b59b6" title="Team color" />
+          <label class="logo-upload-btn" for="newTeamLogo">📷 Logo
+            <input type="file" id="newTeamLogo" accept="image/*" style="display:none;" />
+          </label>
+          <img id="logoPreview" src="" alt="preview" style="display:none;width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border2);" />
+        </div>
+        <button class="btn-primary full" id="addTeamBtn">+ Add Team</button>
+
+        <h3 class="atab-heading mt">Teams in Selected League</h3>
+        <div id="adminTeamList" class="admin-list">
+          <!-- injected -->
+        </div>
+      </div>
+
+      <!-- ── RESULTS TAB ── -->
+      <div class="atab-content" id="atab-results">
+        <h3 class="atab-heading">Record Match Result</h3>
+        <select id="resultLeaguePicker" class="field"></select>
+        <div class="match-row">
+          <div class="match-col">
+            <label class="field-label">Home Team</label>
+            <select id="homeTeamPicker" class="field"></select>
+            <input type="number" id="homeScore" class="field score-input" placeholder="0" min="0" />
+          </div>
+          <div class="vs-badge">VS</div>
+          <div class="match-col">
+            <label class="field-label">Away Team</label>
+            <select id="awayTeamPicker" class="field"></select>
+            <input type="number" id="awayScore" class="field score-input" placeholder="0" min="0" />
+          </div>
+        </div>
+        <button class="btn-primary full" id="recordResultBtn">Record Result</button>
+        <p class="result-feedback hidden" id="resultFeedback"></p>
+      </div>
+
+    </div><!-- /admin-workspace -->
+  </aside>
+
+  <!-- Firebase SDK (v9 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
