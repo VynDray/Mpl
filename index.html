@@ -23,6 +23,7 @@
       </div>
       <nav class="header-nav">
         <button class="nav-btn active" data-view="standings">Standings</button>
+        <button class="nav-btn" data-view="fixtures">Fixtures</button>
         <button class="nav-btn" data-view="leagues">Leagues</button>
         <button class="btn-admin-trigger" id="adminTrigger">⚙ Admin</button>
       </nav>
@@ -73,6 +74,17 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- ── FIXTURES VIEW ── -->
+    <section class="view" id="viewFixtures">
+      <div class="section-head">
+        <h2 class="section-title" id="fixturesLeagueName">Fixtures</h2>
+        <div class="fixtures-league-tabs" id="fixturesLeagueTabs"></div>
+      </div>
+      <div id="fixturesBody" class="fixtures-body">
+        <div class="fixtures-empty">Select a league to see fixtures.</div>
       </div>
     </section>
 
@@ -138,8 +150,11 @@
 
       <!-- ── TEAMS TAB ── -->
       <div class="atab-content" id="atab-teams">
-        <h3 class="atab-heading">Add Team to League</h3>
+        <h3 class="atab-heading">Teams in League</h3>
         <select id="teamLeaguePicker" class="field"></select>
+
+        <div id="addTeamFormArea">
+        <h3 class="atab-heading mt">Add Team</h3>
         <input type="text" id="newTeamName" class="field" placeholder="Team name" />
         <input type="text" id="newTeamShort" class="field" placeholder="Short code (3 letters, e.g. MCI)" maxlength="3" />
         <div style="display:flex;align-items:center;gap:10px;">
@@ -150,8 +165,9 @@
           <img id="logoPreview" src="" alt="preview" style="display:none;width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border2);" />
         </div>
         <button class="btn-primary full" id="addTeamBtn">+ Add Team</button>
+        </div>
 
-        <h3 class="atab-heading mt">Teams in Selected League</h3>
+        <h3 class="atab-heading mt">Registered Teams</h3>
         <div id="adminTeamList" class="admin-list">
           <!-- injected -->
         </div>
