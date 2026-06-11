@@ -104,22 +104,35 @@ body {
   letter-spacing: 1px;
 }
 
-.header-nav { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+.header-nav { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; flex-shrink: 0; }
 
 .nav-btn {
   background: transparent;
   border: 1px solid transparent;
   color: var(--text2);
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.3px;
   text-transform: uppercase;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 44px;
+}
+
+.nav-btn svg { flex-shrink: 0; }
+
+.nav-label {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  line-height: 1;
 }
 
 .nav-btn:hover { color: var(--text); background: var(--surface); }
@@ -130,24 +143,25 @@ body {
   border-color: var(--accent);
 }
 
-.btn-admin-trigger {
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  color: var(--text2);
-  font-family: var(--font-body);
-  font-size: 13px;
-  padding: 7px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-left: 4px;
-  white-space: nowrap;
-  flex-shrink: 0;
+/* Admin button — slightly distinct */
+.nav-btn-admin {
+  color: var(--text3);
+}
+.nav-btn-admin:hover { color: var(--text); background: var(--surface); }
+.nav-btn-admin.active {
+  background: var(--surface2);
+  border-color: var(--border2);
+  color: var(--text);
 }
 
-.btn-admin-trigger:hover {
-  background: var(--surface2);
-  color: var(--text);
+/* Hide brand subtitle on very small screens */
+@media (max-width: 420px) {
+  .brand-sub { display: none; }
+  .brand-title { font-size: 13px; }
+  .brand-badge { width: 38px; height: 38px; font-size: 15px; }
+  .header-inner { padding: 0 12px; gap: 8px; }
+  .nav-btn { min-width: 36px; padding: 5px 5px; }
+  .nav-label { display: none; }
 }
 
 /* ░░ MAIN ░░ */
@@ -252,7 +266,7 @@ body {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 520px;
+  min-width: 480px;
 }
 
 .standings-table thead tr {
@@ -266,17 +280,18 @@ body {
 .standings-table th {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--text3);
-  padding: 12px 8px;
+  padding: 9px 6px;
   text-align: center;
   white-space: nowrap;
 }
 
-.standings-table th.col-team { text-align: left; padding-left: 12px; }
-.standings-table th.col-pos { width: 36px; }
+.standings-table th.col-team { text-align: left; padding-left: 10px; }
+/* col-pos: fixed 44px — wide enough for pos-bar (3px) + gap (4px) + 2-digit number */
+.standings-table th.col-pos { width: 44px; min-width: 44px; max-width: 44px; }
 .standings-table th.col-pts { color: var(--accent2); }
 
 .standings-table tbody tr {
@@ -291,45 +306,59 @@ body {
 .standings-table tbody tr:hover { background: var(--surface2); }
 
 .standings-table td {
-  padding: 10px 8px;
+  padding: 8px 6px;
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text2);
 }
 
-.standings-table td.col-team { text-align: left; padding-left: 12px; }
-.standings-table td.col-pts { font-weight: 700; color: var(--text); font-size: 15px; }
+.standings-table td.col-team { text-align: left; padding-left: 10px; }
+.standings-table td.col-pts { font-weight: 700; color: var(--text); font-size: 14px; }
 
 /* ── STICKY COLUMNS (EPL-style) ── */
-/* Both sticky columns share these base rules */
 .standings-table th.col-pos,
 .standings-table td.col-pos,
 .standings-table th.col-team,
 .standings-table td.col-team {
   position: sticky;
-  z-index: 2;
-  /* MUST be a solid, opaque colour — never transparent or inherit */
-  background: #1a1f30; /* == var(--surface) hardcoded so nothing bleeds through */
+  background: #1a1f30;
 }
 
-/* # column: pinned to the left edge */
+/* # column: highest z-index so team name never slides over it */
 .standings-table th.col-pos,
 .standings-table td.col-pos {
   left: 0;
+  z-index: 4;
 }
 
-/* Team column: pinned right after the # column */
+/* Team column: sits behind the # column */
 .standings-table th.col-team,
 .standings-table td.col-team {
-  left: 36px;
+  left: 44px;
+  z-index: 3;
   box-shadow: 4px 0 8px -2px rgba(0,0,0,0.6);
+  overflow: hidden;
 }
 
-/* Header row sticky cells sit above body sticky cells */
-.standings-table thead th.col-pos,
+/* Clip the team-cell so logo/crest never bleeds left into the # column */
+.standings-table td.col-team .team-cell {
+  overflow: hidden;
+}
+.standings-table td.col-team img,
+.standings-table td.col-team .team-crest {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 0;
+}
+
+/* Header row sits above all body sticky cells */
+.standings-table thead th.col-pos {
+  background: #181c28;
+  z-index: 6;
+}
 .standings-table thead th.col-team {
-  background: #181c28; /* == var(--bg3) hardcoded */
-  z-index: 3;
+  background: #181c28;
+  z-index: 5;
 }
 
 /* Zone rows — solid mixed colours, NOT semi-transparent */
@@ -349,12 +378,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
+  width: 44px;
 }
 
 .pos-bar {
   width: 3px;
-  height: 20px;
+  height: 16px;
   border-radius: 2px;
   flex-shrink: 0;
 }
@@ -367,7 +397,7 @@ body {
 .pos-num {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 14px;
   color: var(--text);
   min-width: 18px;
   text-align: center;
@@ -377,20 +407,20 @@ body {
 .team-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   white-space: nowrap;
 }
 
 .team-crest {
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.5px;
   color: #fff;
   flex-shrink: 0;
@@ -399,10 +429,10 @@ body {
 .team-name {
   font-weight: 600;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
+  max-width: 140px;
 }
 
 .team-short {
@@ -414,16 +444,16 @@ body {
 /* Form badges */
 .form-wrap {
   display: flex;
-  gap: 3px;
+  gap: 2px;
   justify-content: center;
   flex-wrap: nowrap;
 }
 
 .form-badge {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  font-size: 10px;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 9px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -1000,9 +1030,9 @@ body {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  gap: 8px;
+  gap: 6px;
   position: relative;
   transition: background 0.15s;
 }
@@ -1025,36 +1055,36 @@ body {
 .fx-away .fx-team-name { text-align: left; }
 
 .fx-team-name {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
+  max-width: 110px;
 }
 
 /* Score display */
 .fx-score {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-width: 72px;
+  gap: 3px;
+  min-width: 64px;
   justify-content: center;
 }
 
 .fx-score.played {
   background: var(--surface2);
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 5px 8px;
 }
 
 .fx-score-num {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   color: var(--text);
   line-height: 1;
-  min-width: 18px;
+  min-width: 16px;
   text-align: center;
 }
 
@@ -1304,3 +1334,190 @@ body {
   .fx-match:has(.fx-enter-btn) .fx-team-name,
   .fx-match:has(.fx-edit-btn) .fx-team-name { max-width: 55px; }
 }
+
+/* ░░ HALL OF FAME ░░ */
+.hof-title::before {
+  content: "🏆 ";
+}
+
+.hof-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hof-empty {
+  text-align: center;
+  color: var(--text3);
+  font-size: 14px;
+  padding: 48px 20px;
+}
+
+
+.hof-card:first-child {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.hof-card:last-child {
+  border-bottom: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.hof-card:only-child {
+  border-radius: var(--radius-lg);
+}
+.hof-card:hover { background: var(--surface2); }
+
+.hof-rank {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 28px;
+  color: var(--border2);
+  min-width: 36px;
+  text-align: center;
+  line-height: 1;
+}
+.hof-rank.hof-1 { color: #f0b429; }
+.hof-rank.hof-2 { color: #a0aec0; }
+.hof-rank.hof-3 { color: #c05621; }
+
+
+
+.hof-info {
+  flex: 1;
+  min-width: 0;
+}
+
+
+
+
+
+
+
+
+
+/* Admin HoF list */
+.hof-admin-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+.hof-admin-item:last-child { border-bottom: none; }
+.hof-admin-champion { font-weight: 600; font-size: 13px; color: var(--text); }
+.hof-admin-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+
+/* ── CHAMPIONS BOARD ── */
+.hof-board {
+  background: linear-gradient(135deg, #1a1608 0%, #2a2010 50%, #1a1608 100%);
+  border: 1px solid rgba(240, 180, 41, 0.35);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.hof-board-title {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid rgba(240, 180, 41, 0.2);
+  opacity: 0.8;
+}
+
+.hof-board-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.hof-board-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid rgba(240, 180, 41, 0.08);
+  transition: background 0.15s;
+}
+.hof-board-row:last-child { border-bottom: none; }
+.hof-board-row:hover { background: rgba(240, 180, 41, 0.05); }
+
+.hof-board-rank {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 13px;
+  color: rgba(240, 180, 41, 0.4);
+  min-width: 20px;
+  text-align: center;
+}
+
+.hof-board-name {
+  flex: 1;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  color: #f5e6b0;
+  letter-spacing: 0.3px;
+}
+
+.hof-board-wins {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 15px;
+  color: var(--gold);
+  letter-spacing: 0.5px;
+}
+
+/* ── SEASON RECORDS ── */
+.hof-wrap {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.hof-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  transition: background 0.15s;
+}
+.hof-card:last-child { border-bottom: none; }
+.hof-card:hover { background: var(--surface2); }
+
+.hof-trophy {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.hof-info { flex: 1; min-width: 0; }
+
+.hof-champion-name {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 18px;
+  color: var(--text);
+  letter-spacing: 0.3px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hof-meta {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 3px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hof-pts { color: var(--accent2); font-weight: 700; }

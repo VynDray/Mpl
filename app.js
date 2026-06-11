@@ -39,6 +39,7 @@ function initFirebase() {
     db = firebase.firestore();
     firebaseReady = true;
     loadLeagues();
+    loadHofFromFirestore();
   } catch (e) {
     console.error("Firebase init failed:", e);
     showSetupNotice();
@@ -302,7 +303,7 @@ function renderStandings(leagueId) {
 
     return `
     <tr class="${zone ? 'zone-' + zone : ''}">
-      <td><div class="pos-cell">
+      <td class="col-pos"><div class="pos-cell">
         <div class="pos-bar ${zone || 'none'}"></div>
         <span class="pos-num">${pos}</span>
       </div></td>
@@ -892,8 +893,8 @@ function switchView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById("view" + name[0].toUpperCase() + name.slice(1))?.classList.add("active");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
-  // Re-render fixtures view to show/hide edit buttons based on admin state
   if (name === "fixtures") renderFixturesView();
+  if (name === "hof") renderHof();
 }
 
 function openAdmin() {
@@ -949,6 +950,129 @@ function showSetupNotice() {
   main.insertBefore(notice, main.firstChild);
 }
 
+
+// ══════════════════════════════════════════════
+//  HALL OF FAME
+// ══════════════════════════════════════════════
+let hofEntries = JSON.parse(localStorage.getItem("mpl_hof") || "[]");
+
+function saveHof() {
+  localStorage.setItem("mpl_hof", JSON.stringify(hofEntries));
+  // If firebase ready, sync to Firestore too
+  if (firebaseReady) {
+    db.collection("meta").doc("hof").set({ entries: hofEntries })
+      .catch(e => console.warn("HOF sync error:", e.message));
+  }
+}
+
+async function loadHofFromFirestore() {
+  if (!firebaseReady) return;
+  try {
+    const doc = await db.collection("meta").doc("hof").get();
+    if (doc.exists && doc.data().entries) {
+      hofEntries = doc.data().entries;
+      localStorage.setItem("mpl_hof", JSON.stringify(hofEntries));
+    }
+  } catch (e) { console.warn("HOF load error:", e.message); }
+}
+
+function renderHof() {
+  const body = document.getElementById("hofBody");
+  if (!hofEntries.length) {
+    body.innerHTML = `<div class="hof-empty">No champions yet. Season winners are pinned here by Admin.</div>`;
+    return;
+  }
+
+  // Build win-count map (champion name -> count)
+  const winCount = {};
+  hofEntries.forEach(e => {
+    const key = e.champion.trim().toLowerCase();
+    winCount[key] = (winCount[key] || 0) + 1;
+  });
+
+  // Sorted unique champions by total wins (for the leaderboard)
+  const champBoard = Object.entries(
+    hofEntries.reduce((acc, e) => {
+      const key = e.champion.trim();
+      if (!acc[key]) acc[key] = { champion: key, wins: 0, seasons: [] };
+      acc[key].wins++;
+      acc[key].seasons.push(`${e.league} – ${e.season}${e.points ? ` (${e.points} pts)` : ""}`);
+      return acc;
+    }, {})
+  ).sort((a, b) => b[1].wins - a[1].wins);
+
+  // Champion board at the top
+  let html = `<div class="hof-board">
+    <div class="hof-board-title">Champions Board</div>
+    <div class="hof-board-list">` +
+    champBoard.map(([, c], i) => `
+      <div class="hof-board-row">
+        <span class="hof-board-rank">${i + 1}</span>
+        <span class="hof-board-name">${c.champion}</span>
+        <span class="hof-board-wins">${c.wins} 🏆</span>
+      </div>`).join("") +
+    `</div>
+  </div>`;
+
+  // All pinned seasons below (every entry = gold trophy)
+  html += `<div class="hof-wrap">` +
+    hofEntries.map((e) => `
+    <div class="hof-card">
+      <div class="hof-trophy">🏆</div>
+      <div class="hof-info">
+        <div class="hof-champion-name">${e.champion}</div>
+        <div class="hof-meta">
+          <span>${e.league}</span>
+          <span>${e.season}</span>
+          ${e.points ? `<span class="hof-pts">${e.points} pts</span>` : ""}
+        </div>
+      </div>
+    </div>`).join("") +
+    `</div>`;
+
+  body.innerHTML = html;
+}
+
+function renderAdminHofList() {
+  const list = document.getElementById("adminHofList");
+  if (!list) return;
+  if (!hofEntries.length) {
+    list.innerHTML = `<p style="color:var(--text3);font-size:13px;">No entries yet.</p>`;
+    return;
+  }
+  list.innerHTML = hofEntries.map((e, i) => `
+    <div class="hof-admin-item">
+      <div>
+        <div class="hof-admin-champion">🏆 ${e.champion}</div>
+        <div class="hof-admin-meta">${e.league} · ${e.season}${e.points ? ` · ${e.points} pts` : ""}</div>
+      </div>
+      <button class="btn-danger-sm" data-hof-idx="${i}">Remove</button>
+    </div>`).join("");
+  list.querySelectorAll("[data-hof-idx]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      hofEntries.splice(parseInt(btn.dataset.hofIdx), 1);
+      saveHof();
+      renderAdminHofList();
+      renderHof();
+      toast("Entry removed", "success");
+    });
+  });
+}
+
+function pinHofEntry() {
+  const champion = document.getElementById("hofChampion").value.trim();
+  const league = document.getElementById("hofLeagueName").value.trim();
+  const season = document.getElementById("hofSeason").value.trim();
+  const pts = document.getElementById("hofPoints").value.trim();
+  if (!champion || !league || !season) { toast("Fill in champion, league and season", "error"); return; }
+  hofEntries.unshift({ champion, league, season, points: pts ? parseInt(pts) : null, pinnedAt: Date.now() });
+  saveHof();
+  ["hofChampion","hofLeagueName","hofSeason","hofPoints"].forEach(id => document.getElementById(id).value = "");
+  renderAdminHofList();
+  renderHof();
+  toast("🏆 Pinned to Hall of Fame!", "success");
+}
+
 // ══════════════════════════════════════════════
 //  EVENT LISTENERS
 // ══════════════════════════════════════════════
@@ -976,6 +1100,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".atab-content").forEach(c => c.classList.remove("active"));
       tab.classList.add("active");
       document.getElementById("atab-" + tab.dataset.atab)?.classList.add("active");
+      if (tab.dataset.atab === "hof") renderAdminHofList();
     });
   });
 
@@ -1005,6 +1130,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Results
   document.getElementById("recordResultBtn").addEventListener("click", recordResult);
   document.getElementById("resultLeaguePicker").addEventListener("change", renderResultTeamPickers);
+
+  // Hall of Fame
+  document.getElementById("pinHofBtn")?.addEventListener("click", pinHofEntry);
+  renderAdminHofList();
+  renderHof();
 
   initFirebase();
 });
