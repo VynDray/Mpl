@@ -255,7 +255,7 @@ body {
 /* ── STANDINGS TABLE ── */
 .table-wrap {
   background: var(--surface);
-  border-radius: var(--radius-lg);
+  border-radius: 0;
   border: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: visible;
@@ -284,14 +284,14 @@ body {
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--text3);
-  padding: 9px 6px;
+  padding: 9px 5px;
   text-align: center;
   white-space: nowrap;
 }
 
-.standings-table th.col-team { text-align: left; padding-left: 10px; }
-/* col-pos: fixed 44px — wide enough for pos-bar (3px) + gap (4px) + 2-digit number */
-.standings-table th.col-pos { width: 44px; min-width: 44px; max-width: 44px; }
+.standings-table th.col-team { text-align: left; padding-left: 8px; width: 150px; min-width: 130px; max-width: 160px; }
+/* col-pos: fixed 38px */
+.standings-table th.col-pos { width: 38px; min-width: 38px; max-width: 38px; }
 .standings-table th.col-pts { color: var(--accent2); }
 
 .standings-table tbody tr {
@@ -306,13 +306,13 @@ body {
 .standings-table tbody tr:hover { background: var(--surface2); }
 
 .standings-table td {
-  padding: 8px 6px;
+  padding: 8px 5px;
   text-align: center;
   font-size: 13px;
   color: var(--text2);
 }
 
-.standings-table td.col-team { text-align: left; padding-left: 10px; }
+.standings-table td.col-team { text-align: left; padding-left: 8px; width: 150px; min-width: 130px; max-width: 160px; }
 .standings-table td.col-pts { font-weight: 700; color: var(--text); font-size: 14px; }
 
 /* ── STICKY COLUMNS (EPL-style) ── */
@@ -324,31 +324,34 @@ body {
   background: #1a1f30;
 }
 
-/* # column: highest z-index so team name never slides over it */
+/* # column: leftmost, highest z-index */
 .standings-table th.col-pos,
 .standings-table td.col-pos {
   left: 0;
   z-index: 4;
+  min-width: 38px;
+  width: 38px;
+  max-width: 38px;
 }
 
-/* Team column: sits behind the # column */
+/* Club column: starts right after # column (38px) */
 .standings-table th.col-team,
 .standings-table td.col-team {
-  left: 44px;
+  left: 38px;
   z-index: 3;
-  box-shadow: 4px 0 8px -2px rgba(0,0,0,0.6);
   overflow: hidden;
+  /* very subtle separator — barely visible */
+  box-shadow: 2px 0 6px -3px rgba(0,0,0,0.3);
 }
 
-/* Clip the team-cell so logo/crest never bleeds left into the # column */
+/* Prevent team-cell content from ever overflowing its sticky box */
 .standings-table td.col-team .team-cell {
   overflow: hidden;
+  max-width: 100%;
 }
 .standings-table td.col-team img,
 .standings-table td.col-team .team-crest {
   flex-shrink: 0;
-  position: relative;
-  z-index: 0;
 }
 
 /* Header row sits above all body sticky cells */
@@ -378,8 +381,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 44px;
+  gap: 3px;
+  width: 38px;
 }
 
 .pos-bar {
@@ -407,14 +410,14 @@ body {
 .team-cell {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   white-space: nowrap;
 }
 
 .team-crest {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -903,7 +906,7 @@ body {
   .standings-table td { padding: 10px 6px; font-size: 12px; }
   /* Sticky pos column width */
   .standings-table th.col-pos,
-  .standings-table td.col-pos { width: 30px; }
+  .standings-table td.col-pos { width: 30px; min-width: 30px; max-width: 30px; }
   /* Sticky team column offset matches pos width */
   .standings-table th.col-team,
   .standings-table td.col-team { left: 30px; padding-left: 8px; }
@@ -916,11 +919,11 @@ body {
   /* Hide Leagues nav button — accessible via league cards */
   .nav-btn[data-view="leagues"] { display: none; }
   .team-name { font-size: 12px; max-width: 90px; }
-  .team-crest { width: 24px; height: 24px; }
+  .team-crest { width: 22px; height: 22px; }
   .standings-table th,
   .standings-table td { padding: 9px 5px; font-size: 11px; }
   .standings-table th.col-pos,
-  .standings-table td.col-pos { width: 26px; }
+  .standings-table td.col-pos { width: 26px; min-width: 26px; max-width: 26px; }
   .standings-table th.col-team,
   .standings-table td.col-team { left: 26px; }
 }

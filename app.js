@@ -236,9 +236,9 @@ function renderAll() {
 }
 
 // ── CREST HTML ──
-function crestHtml(t, size = 30, fontSize = 11) {
+function crestHtml(t, size = 22, fontSize = 9) {
   if (t.logo) {
-    return `<img src="${t.logo}" style="width:${size}px;height:${size}px;border-radius:6px;object-fit:cover;flex-shrink:0;" alt="${t.short}" />`;
+    return `<img src="${t.logo}" style="width:${size}px;height:${size}px;border-radius:4px;object-fit:cover;flex-shrink:0;" alt="${t.short}" />`;
   }
   return `<div class="team-crest" style="width:${size}px;height:${size}px;font-size:${fontSize}px;background:${t.color||'#6c63ff'}">${t.short||'?'}</div>`;
 }
