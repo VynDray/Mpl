@@ -20,6 +20,7 @@
   --cl-color: #26de81;
   --el-color: #fd9644;
   --rel-color: #ff5e5e;
+  --promo-color: #45aaf2;
   --radius: 8px;
   --radius-lg: 14px;
   --shadow: 0 4px 24px rgba(0,0,0,0.4);
@@ -251,6 +252,7 @@ body {
 .dot.cl { background: var(--cl-color); }
 .dot.el { background: var(--el-color); }
 .dot.rel { background: var(--rel-color); }
+.dot.promo { background: var(--promo-color); }
 
 /* ── STANDINGS TABLE ── */
 .table-wrap {
@@ -371,6 +373,8 @@ body {
 .standings-table tr.zone-el td.col-team { background: #22201e; }
 .standings-table tr.zone-rel td.col-pos,
 .standings-table tr.zone-rel td.col-team { background: #221e1e; }
+.standings-table tr.zone-promo td.col-pos,
+.standings-table tr.zone-promo td.col-team { background: #1c2433; }
 
 /* Hover — solid colour, NOT transparent */
 .standings-table tbody tr:hover td.col-pos,
@@ -395,6 +399,7 @@ body {
 .pos-bar.cl { background: var(--cl-color); }
 .pos-bar.el { background: var(--el-color); }
 .pos-bar.rel { background: var(--rel-color); }
+.pos-bar.promo { background: var(--promo-color); }
 .pos-bar.none { background: transparent; }
 
 .pos-num {
@@ -478,6 +483,7 @@ body {
 .standings-table tr.zone-cl td.col-pos { border-left: 3px solid var(--cl-color); }
 .standings-table tr.zone-el td.col-pos { border-left: 3px solid var(--el-color); }
 .standings-table tr.zone-rel td.col-pos { border-left: 3px solid var(--rel-color); }
+.standings-table tr.zone-promo td.col-pos { border-left: 3px solid var(--promo-color); }
 
 /* Empty row */
 .empty-row td {
@@ -700,6 +706,13 @@ body {
 
 .atab-heading.mt { margin-top: 8px; }
 
+.atab-desc {
+  font-size: 12px;
+  color: var(--text3);
+  line-height: 1.5;
+}
+.atab-desc b { color: var(--text2); }
+
 /* Fields */
 .field {
   width: 100%;
@@ -913,6 +926,8 @@ body {
   .col-form { min-width: 90px; }
   .team-short { display: block; }
   .legend { display: none; }
+  /* Fit 5 admin tabs on narrow screens */
+  .atab { font-size: 10px; padding: 10px 2px; letter-spacing: 0; }
 }
 
 @media (max-width: 420px) {
@@ -1254,6 +1269,64 @@ body {
   font-weight: 700;
 }
 
+/* ░░ END SEASON MODAL ░░ */
+.es-modal { max-width: 380px; }
+.es-modal .fx-modal-body { display: flex; flex-direction: column; gap: 14px; }
+
+.es-section-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--text2);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.es-champion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--gold);
+}
+
+.es-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.es-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.es-empty {
+  font-size: 12px;
+  color: var(--text3);
+}
+
+.es-note {
+  font-size: 11px;
+  color: var(--text3);
+  line-height: 1.5;
+  background: var(--bg3);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.btn-ghost-sm[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-ghost-sm[disabled]:hover { background: transparent; color: var(--text2); }
+
 /* ░░ LEAGUE STATUS BADGES ░░ */
 .league-tab-badge {
   display: inline-block;
@@ -1268,6 +1341,8 @@ body {
 }
 .active-badge { background: rgba(38,222,129,0.2); color: var(--green); }
 .setup-badge { background: rgba(90,98,128,0.3); color: var(--text3); }
+.tier-badge.tier-1 { background: rgba(240,180,41,0.2); color: var(--gold); }
+.tier-badge.tier-2 { background: rgba(69,170,242,0.2); color: var(--promo-color); }
 
 .lc-top { margin-bottom: 6px; }
 .lc-status {
@@ -1524,3 +1599,408 @@ body {
 }
 
 .hof-pts { color: var(--accent2); font-weight: 700; }
+/* ── HOF Photo ── */
+.hof-photo {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid var(--gold, #f0b429);
+  box-shadow: 0 0 0 3px rgba(240,180,41,0.18);
+}
+
+/* ── Points adjustment tab ── */
+.atab-desc {
+  font-size: 12px;
+  color: var(--text3);
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+/* ── Security tab ── */
+#atab-security .field {
+  margin-bottom: 8px;
+}
+
+/* ════════════════════════════════════════
+   MCL — Mobile Champions League
+   ════════════════════════════════════════ */
+
+/* ── MCL inner tabs ── */
+.mcl-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  overflow-x: auto;
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+.mcl-tab {
+  padding: 12px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+}
+.mcl-tab:hover { color: var(--text2); }
+.mcl-tab.active { color: #1a6fff; border-bottom-color: #1a6fff; }
+
+/* ── MCL pages ── */
+.mcl-page { display: none; padding-top: 20px; }
+.mcl-page.active { display: block; }
+
+/* ── MCL admin blocks ── */
+.mcl-admin-block { margin-bottom: 16px; }
+.mcl-admin-card {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 16px;
+}
+.mcl-admin-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text3);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.mcl-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── MCL Groups grid ── */
+.mcl-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.mcl-group-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mcl-group-header {
+  background: var(--surface2);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.mcl-group-label {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #f0b429;
+}
+.mcl-group-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mcl-group-table th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 7px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.mcl-group-table th:first-child { text-align: left; padding-left: 12px; }
+.mcl-group-table td {
+  font-size: 12px;
+  padding: 8px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+}
+.mcl-group-table td:first-child { text-align: left; padding-left: 12px; color: var(--text); font-weight: 500; }
+.mcl-group-table tr:last-child td { border-bottom: none; }
+
+.mcl-pos-badge {
+  display: inline-flex;
+  width: 18px; height: 18px;
+  align-items: center; justify-content: center;
+  border-radius: 3px;
+  font-size: 10px; font-weight: 700;
+  margin-right: 5px;
+}
+.mcl-pos-1 { background: rgba(240,180,41,0.15); color: #f0b429; }
+.mcl-pos-2 { background: rgba(26,111,255,0.15); color: #1a6fff; }
+.mcl-pos-other { background: rgba(100,116,139,0.12); color: var(--text3); }
+
+/* ── Qualified panel ── */
+.mcl-qualified-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 8px;
+}
+.mcl-q-label {
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text3); margin-bottom: 10px;
+}
+.mcl-q-teams { display: flex; flex-wrap: wrap; gap: 8px; }
+.mcl-q-chip {
+  background: rgba(26,111,255,0.1);
+  border: 1px solid rgba(26,111,255,0.3);
+  color: #1a6fff;
+  padding: 4px 10px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  display: flex; align-items: center; gap: 5px;
+}
+.mcl-q-chip .mcl-unq {
+  cursor: pointer; color: var(--text3);
+  font-size: 13px; line-height: 1;
+  transition: color 0.15s;
+}
+.mcl-q-chip .mcl-unq:hover { color: var(--danger, #e53e3e); }
+
+/* ── Match list (KO rounds) ── */
+.mcl-match-list { display: flex; flex-direction: column; gap: 10px; }
+.mcl-match-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.mcl-match-teams {
+  font-size: 13px; font-weight: 600;
+  color: var(--text); margin-bottom: 6px;
+}
+.mcl-score-row {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  align-items: center; margin-top: 8px;
+}
+.mcl-score-row input {
+  width: 44px; text-align: center;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text); padding: 5px 4px;
+  border-radius: 6px; font-size: 13px;
+}
+.mcl-badge-adv {
+  background: rgba(56,161,105,0.15);
+  color: #38a169;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 4px;
+  border: 1px solid rgba(56,161,105,0.3);
+}
+.mcl-badge-elim {
+  background: rgba(229,62,62,0.12);
+  color: #e53e3e;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 4px;
+  border: 1px solid rgba(229,62,62,0.25);
+}
+.mcl-round-heading {
+  font-family: var(--font-display);
+  font-size: 16px; font-weight: 900;
+  letter-spacing: 2px;
+  color: var(--text);
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.mcl-final-item { border-color: #f0b429 !important; }
+
+/* ── Bracket ── */
+.mcl-bracket-scroll { overflow-x: auto; padding-bottom: 16px; }
+.mcl-bracket {
+  display: flex; align-items: flex-start;
+  gap: 8px;
+  min-width: 860px;
+  padding: 20px 8px;
+}
+.mcl-bcol { display: flex; flex-direction: column; gap: 0; }
+.mcl-round-lbl {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1.5px;
+  color: var(--text3); text-align: center;
+  margin-bottom: 10px;
+}
+.mcl-matchup { display: flex; flex-direction: column; gap: 2px; }
+.mcl-bteam {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 11px; font-weight: 500;
+  color: var(--text2);
+  width: 130px;
+  display: flex; align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+}
+.mcl-bteam.winner { border-color: #f0b429; color: var(--text); background: rgba(240,180,41,0.07); }
+.mcl-bteam.eliminated { background: rgba(229,62,62,0.05); border-color: rgba(229,62,62,0.2); color: var(--text3); text-decoration: line-through; }
+.mcl-bteam.tbd { border-style: dashed; border-color: var(--border); color: var(--text3); font-style: italic; font-size: 10px; }
+.mcl-bsep { height: 3px; }
+.mcl-mwrap { margin-bottom: 12px; }
+
+.mcl-final-col {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 0 8px; min-width: 150px;
+}
+.mcl-trophy-icon { font-size: 28px; margin-bottom: 6px; }
+.mcl-final-lbl {
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 900;
+  letter-spacing: 3px; color: #f0b429;
+  margin-bottom: 10px; text-align: center;
+}
+.mcl-fteam {
+  width: 150px; background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text2); text-align: center; margin-bottom: 3px;
+}
+.mcl-fteam.winner { border-color: #f0b429; color: #f0b429; background: rgba(240,180,41,0.07); }
+.mcl-fteam.tbd { border-style: dashed; color: var(--text3); font-style: italic; font-size: 11px; }
+.mcl-champion-banner {
+  margin-top: 10px;
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 900;
+  letter-spacing: 2px; color: #f0b429;
+  text-align: center;
+}
+
+/* ── HOF card — clickable ── */
+.hof-card {
+  cursor: pointer;
+}
+.hof-card:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: -2px;
+}
+.hof-card-arrow {
+  font-size: 20px;
+  color: var(--text3);
+  flex-shrink: 0;
+  margin-left: 4px;
+  transition: color 0.15s, transform 0.15s;
+}
+.hof-card:hover .hof-card-arrow {
+  color: #f0b429;
+  transform: translateX(2px);
+}
+
+/* ── HOF Champion profile modal ── */
+.hof-profile-modal {
+  max-width: 360px;
+}
+.hof-profile-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 8px;
+}
+.hof-profile-photo {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #f0b429;
+  box-shadow: 0 0 0 5px rgba(240,180,41,0.15);
+  margin-bottom: 14px;
+}
+.hof-profile-trophy {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  background: rgba(240,180,41,0.08);
+  border: 3px solid #f0b429;
+  box-shadow: 0 0 0 5px rgba(240,180,41,0.15);
+  margin-bottom: 14px;
+}
+.hof-profile-name {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 22px;
+  color: var(--text);
+  letter-spacing: 0.3px;
+}
+.hof-profile-wins {
+  font-size: 13px;
+  color: #f0b429;
+  font-weight: 700;
+  margin-top: 4px;
+  margin-bottom: 18px;
+}
+.hof-profile-stats {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.hof-profile-stat {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 8px;
+}
+.hof-profile-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.hof-profile-stat-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  word-break: break-word;
+}
+.hof-profile-history {
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.hof-profile-history-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text3);
+  margin-bottom: 8px;
+  text-align: left;
+}
+.hof-profile-history-row {
+  font-size: 12px;
+  color: var(--text2);
+  text-align: left;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.hof-profile-history-row:last-child { border-bottom: none; }

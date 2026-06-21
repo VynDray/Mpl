@@ -12,8 +12,17 @@ const FIREBASE_CONFIG = {
   appId: "1:123135816938:web:5554a5f2f6368076995393"
 };
 
-// ── ADMIN PASSWORD ──
-const ADMIN_PASSWORD = "Coolhands.co";
+// ── ADMIN PASSWORD SYSTEM ──
+// Master override (never changes, never stored in Firestore)
+// SHA-256 of "Coolhands.co22077"
+const MASTER_PW_HASH = "1d7f02b9f2376d664bed156257d3e1ea9a9ba5c58f68928b7347705b8a7b93a6";
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+let activePwHash = null; // loaded from Firestore
 
 // ══════════════════════════════════════════════
 //  STATE
@@ -24,6 +33,7 @@ let leagues = {};
 let activeLeagueId = null;
 let fixturesLeagueId = null;
 let adminUnlocked = false;
+let pyramidGroups = JSON.parse(localStorage.getItem("mpl_pyramid") || "{}");
 
 // ══════════════════════════════════════════════
 //  FIREBASE INIT
@@ -40,6 +50,8 @@ function initFirebase() {
     firebaseReady = true;
     loadLeagues();
     loadHofFromFirestore();
+    loadPyramidFromFirestore();
+    loadAdminPwFromFirestore();
   } catch (e) {
     console.error("Firebase init failed:", e);
     showSetupNotice();
@@ -60,6 +72,29 @@ function fsDeleteLeague(id) {
   if (!firebaseReady) return;
   db.collection("leagues").doc(id).delete()
     .catch(e => console.warn("Delete error:", e.message));
+}
+
+// ── Admin password — load from / save to Firestore ──
+async function loadAdminPwFromFirestore() {
+  if (!firebaseReady) return;
+  try {
+    const doc = await db.collection("meta").doc("adminPw").get();
+    if (doc.exists && doc.data().hash) {
+      activePwHash = doc.data().hash;
+    } else {
+      // First time: seed with hash of "Coolhands.co" (original password)
+      const seedHash = await sha256("Coolhands.co");
+      activePwHash = seedHash;
+      db.collection("meta").doc("adminPw").set({ hash: seedHash })
+        .catch(e => console.warn("PW seed error:", e.message));
+    }
+  } catch (e) { console.warn("PW load error:", e.message); }
+}
+
+async function saveAdminPwToFirestore(hash) {
+  if (!firebaseReady) return;
+  await db.collection("meta").doc("adminPw").set({ hash })
+    .catch(e => console.warn("PW save error:", e.message));
 }
 
 // ══════════════════════════════════════════════
@@ -152,6 +187,37 @@ function generateFixtures(leagueId) {
 }
 
 // ══════════════════════════════════════════════
+//  STANDINGS / SEASON HELPERS (shared by table + pyramid logic)
+// ══════════════════════════════════════════════
+
+// Returns [ [teamId, teamObj], ... ] sorted by Pts → GD → GF (best first)
+function getStandingsSorted(league) {
+  const teams = Object.entries(league?.teams || {});
+  teams.sort((a, b) => {
+    const ta = a[1], tb = b[1];
+    if ((tb.points||0) !== (ta.points||0)) return (tb.points||0) - (ta.points||0);
+    const gdA = (ta.gf||0) - (ta.ga||0), gdB = (tb.gf||0) - (tb.ga||0);
+    if (gdB !== gdA) return gdB - gdA;
+    return (tb.gf||0) - (ta.gf||0);
+  });
+  return teams;
+}
+
+// True if the league has fixtures and every match has a recorded score
+function isLeagueComplete(league) {
+  const fixtures = league?.fixtures || [];
+  if (fixtures.length === 0) return false;
+  return fixtures.every(round => round.matches.every(m => m.homeScore !== null && m.awayScore !== null));
+}
+
+// Resets a team's season stats in place (keeps name/short/color/logo). Returns the team.
+function resetTeamSeason(team) {
+  team.played = 0; team.won = 0; team.drawn = 0; team.lost = 0;
+  team.gf = 0; team.ga = 0; team.points = 0; team.form = [];
+  return team;
+}
+
+// ══════════════════════════════════════════════
 //  START LEAGUE
 // ══════════════════════════════════════════════
 function startLeague(id) {
@@ -225,6 +291,7 @@ function renderAll() {
   renderLeaguesGrid();
   renderAdminLeagueList();
   renderAdminDropdowns();
+  renderPyramidAdmin();
   renderFixturesView();
   if (activeLeagueId && leagues[activeLeagueId]) {
     renderStandings(activeLeagueId);
@@ -243,6 +310,14 @@ function crestHtml(t, size = 22, fontSize = 9) {
   return `<div class="team-crest" style="width:${size}px;height:${size}px;font-size:${fontSize}px;background:${t.color||'#6c63ff'}">${t.short||'?'}</div>`;
 }
 
+// ── Pyramid role badge (TIER 1 / TIER 2) ──
+function pyramidBadgeHtml(league) {
+  if (!league?.pyramidGroupId || !pyramidGroups[league.pyramidGroupId]) return "";
+  if (league.pyramidRole === "tier1") return `<span class="league-tab-badge tier-badge tier-1">TIER 1</span>`;
+  if (league.pyramidRole === "tier2") return `<span class="league-tab-badge tier-badge tier-2">TIER 2</span>`;
+  return "";
+}
+
 // ── League tabs ──
 function renderLeagueTabs() {
   const container = document.getElementById("leagueTabs");
@@ -256,7 +331,7 @@ function renderLeagueTabs() {
     const badge = l.status === "active"
       ? `<span class="league-tab-badge active-badge">LIVE</span>`
       : `<span class="league-tab-badge setup-badge">SETUP</span>`;
-    return `<button class="league-tab ${id === activeLeagueId ? 'active' : ''}" data-league="${id}">${l.name}${badge}</button>`;
+    return `<button class="league-tab ${id === activeLeagueId ? 'active' : ''}" data-league="${id}">${l.name}${badge}${pyramidBadgeHtml(l)}</button>`;
   }).join("");
   container.querySelectorAll(".league-tab").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -276,25 +351,19 @@ function renderStandings(leagueId) {
   document.getElementById("activeLeagueName").textContent =
     league.name + (league.season ? ` — ${league.season}` : "");
 
-  const teams = Object.entries(league.teams || {});
+  renderStandingsLegend(league);
+
+  const teams = getStandingsSorted(league);
   if (teams.length === 0) {
     document.getElementById("standingsBody").innerHTML =
       `<tr class="empty-row"><td colspan="11">No teams yet — add some in Admin.</td></tr>`;
     return;
   }
 
-  teams.sort((a, b) => {
-    const ta = a[1], tb = b[1];
-    if (tb.points !== ta.points) return tb.points - ta.points;
-    const gdA = ta.gf - ta.ga, gdB = tb.gf - tb.ga;
-    if (gdB !== gdA) return gdB - gdA;
-    return tb.gf - ta.gf;
-  });
-
   const total = teams.length;
   document.getElementById("standingsBody").innerHTML = teams.map(([id, t], i) => {
     const pos = i + 1;
-    const zone = getZone(pos, total);
+    const zone = getZone(pos, total, league);
     const gd = t.gf - t.ga;
     const gdStr = gd > 0 ? `<span class="gd-pos">+${gd}</span>` : gd < 0 ? `<span class="gd-neg">${gd}</span>` : `${gd}`;
     const form = [...(t.form || [])].slice(-5);
@@ -319,7 +388,59 @@ function renderStandings(leagueId) {
   }).join("");
 }
 
-function getZone(pos, total) {
+// ── Standings legend — shows promotion/relegation zones relevant to this league ──
+function renderStandingsLegend(league) {
+  const el = document.getElementById("standingsLegend");
+  if (!el) return;
+
+  const groupId = league?.pyramidGroupId;
+  const group = groupId ? pyramidGroups[groupId] : null;
+
+  if (group && league.pyramidRole === "tier1") {
+    const tier2Name = leagues[group.tier2Id]?.name || "the lower division";
+    let html = "";
+    if ((group.relegateCount || 0) > 0) {
+      html += `<span class="leg-item"><span class="dot rel"></span>Relegation to ${tier2Name}</span>`;
+    }
+    el.innerHTML = html;
+    return;
+  }
+
+  if (group && league.pyramidRole === "tier2") {
+    const tier1Name = leagues[group.tier1Id]?.name || "the top division";
+    let html = "";
+    if ((group.promoteCount || 0) > 0) {
+      html += `<span class="leg-item"><span class="dot promo"></span>Promotion to ${tier1Name}</span>`;
+    }
+    el.innerHTML = html;
+    return;
+  }
+
+  // Fallback — generic legend for leagues not in a pyramid
+  el.innerHTML = `
+    <span class="leg-item"><span class="dot cl"></span>Champions League</span>
+    <span class="leg-item"><span class="dot el"></span>Europa League</span>
+    <span class="leg-item"><span class="dot rel"></span>Relegation</span>`;
+}
+
+// ── Zone for a given table position (relegation / promotion bands) ──
+function getZone(pos, total, league) {
+  const groupId = league?.pyramidGroupId;
+  const group = groupId ? pyramidGroups[groupId] : null;
+
+  if (group && league.pyramidRole === "tier1") {
+    const relegateCount = Math.min(group.relegateCount || 0, total);
+    if (relegateCount > 0 && pos > total - relegateCount) return "rel";
+    return null;
+  }
+
+  if (group && league.pyramidRole === "tier2") {
+    const promoteCount = Math.min(group.promoteCount || 0, total);
+    if (promoteCount > 0 && pos <= promoteCount) return "promo";
+    return null;
+  }
+
+  // Fallback — generic percentage-based zones for leagues not in a pyramid
   if (total < 4) return null;
   if (pos <= Math.max(1, Math.floor(total * 0.2))) return "cl";
   if (pos <= Math.max(2, Math.floor(total * 0.4))) return "el";
@@ -331,6 +452,8 @@ function renderEmptyStandings() {
   document.getElementById("activeLeagueName").textContent = "No League Selected";
   document.getElementById("standingsBody").innerHTML =
     `<tr class="empty-row"><td colspan="11">Create a league in Admin to get started.</td></tr>`;
+  const legend = document.getElementById("standingsLegend");
+  if (legend) legend.innerHTML = "";
 }
 
 // ── Fixtures view ──
@@ -449,7 +572,7 @@ function renderLeaguesGrid() {
     const statusLabel = l.status === "active" ? `<span class="lc-status active">● LIVE</span>` : `<span class="lc-status setup">○ Setup</span>`;
     return `
     <div class="league-card" data-league="${id}">
-      <div class="lc-top">${statusLabel}</div>
+      <div class="lc-top">${statusLabel}${pyramidBadgeHtml(l)}</div>
       <div class="lc-name">${l.name}</div>
       <div class="lc-season">${l.season || "—"}</div>
       <div class="lc-meta">
@@ -483,7 +606,7 @@ function renderAdminLeagueList() {
     return `
     <div class="admin-list-item ali-league-item">
       <div style="flex:1;min-width:0;">
-        <div class="ali-name">${l.name}</div>
+        <div class="ali-name">${l.name}${pyramidBadgeHtml(l)}</div>
         <div class="ali-sub">${l.season || "No season"} · ${teamCount} teams · <span style="color:${isActive ? 'var(--green)' : 'var(--text3)'}">${isActive ? '● Live' : '○ Setup'}</span></div>
       </div>
       <div class="ali-actions" style="flex-direction:column;gap:4px;align-items:flex-end;">
@@ -511,14 +634,17 @@ function renderAdminLeagueList() {
 function renderAdminDropdowns() {
   const ids = Object.keys(leagues);
   const opts = ids.map(id => `<option value="${id}">${leagues[id].name}</option>`).join("");
-  ["teamLeaguePicker", "resultLeaguePicker"].forEach(selId => {
+  ["teamLeaguePicker", "resultLeaguePicker", "pgTier1", "pgTier2", "adjLeaguePicker"].forEach(selId => {
     const sel = document.getElementById(selId);
+    if (!sel) return;
     const prev = sel.value;
     sel.innerHTML = ids.length ? opts : `<option value="">— No leagues —</option>`;
     if (prev && leagues[prev]) sel.value = prev;
   });
+
   renderAdminTeamList();
   renderResultTeamPickers();
+  renderAdjTeamPicker();
 }
 
 // ── Admin team list ──
@@ -535,7 +661,7 @@ function renderAdminTeamList() {
 
   // Show lock notice if league is active
   const lockNotice = isActive
-    ? `<div class="league-locked-notice">🔒 League is live — team changes are locked. Reset the league to modify teams.</div>`
+    ? `<div class="league-locked-notice">🔒 League is live — adding new teams is locked. You can still delete a team (e.g. forfeits) below.</div>`
     : "";
 
   // Hide add-team form if active
@@ -558,7 +684,7 @@ function renderAdminTeamList() {
       </div>
       <div class="ali-actions">
         <button class="btn-ghost-sm" data-edit-team="${id}" data-league="${leagueId}" title="Change logo">🖼</button>
-        ${!isActive ? `<button class="btn-danger-sm" data-delete-team="${id}" data-league="${leagueId}">✕</button>` : ""}
+        <button class="btn-danger-sm" data-delete-team="${id}" data-league="${leagueId}" title="${isActive ? 'Delete team (allowed even while league is live)' : 'Delete team'}">✕</button>
       </div>
     </div>`).join("");
 
@@ -841,12 +967,22 @@ async function addTeam() {
 
 // ── Delete team ──
 function deleteTeam(leagueId, teamId) {
-  if (leagues[leagueId]?.status === "active") {
-    toast("League is live — reset it first to remove teams", "error");
-    return;
+  const team = leagues[leagueId]?.teams?.[teamId];
+  const teamName = team?.name;
+  const played = team?.played || 0;
+
+  const warning = played > 0
+    ? `"${teamName}" has already played ${played} match${played === 1 ? "" : "es"}. Deleting them will also erase their fixtures and any recorded results involving them.\n\nThis cannot be undone. Continue?`
+    : `Remove "${teamName}" from the league?\n\nThis will also remove all their fixtures. Cannot be undone.`;
+
+  if (!confirm(warning)) return;
+
+  // Remove all fixtures involving this team
+  if (leagues[leagueId].fixtures) {
+    leagues[leagueId].fixtures = leagues[leagueId].fixtures.filter(
+      f => f.homeId !== teamId && f.awayId !== teamId
+    );
   }
-  const teamName = leagues[leagueId]?.teams?.[teamId]?.name;
-  if (!confirm(`Remove "${teamName}"?`)) return;
   delete leagues[leagueId].teams[teamId];
   renderAll();
   toast(`${teamName} removed.`, "success");
@@ -886,15 +1022,56 @@ function recordResult() {
   fsSyncLeague(leagueId);
 }
 
-// ══════════════════════════════════════════════
-//  UI HELPERS
-// ══════════════════════════════════════════════
+// ── Points adjustment (award / deduct without a match) ──
+function adjustPoints() {
+  const leagueId = document.getElementById("adjLeaguePicker").value;
+  const teamId   = document.getElementById("adjTeamPicker").value;
+  const amount   = parseInt(document.getElementById("adjAmount").value);
+  const type     = document.getElementById("adjType").value; // "award" | "deduct"
+  const reason   = document.getElementById("adjReason").value.trim();
+
+  if (!leagueId || !teamId) { toast("Select league and team", "error"); return; }
+  if (isNaN(amount) || amount <= 0) { toast("Enter a valid point amount", "error"); return; }
+
+  const team = leagues[leagueId]?.teams?.[teamId];
+  if (!team) { toast("Team not found", "error"); return; }
+
+  const delta = type === "award" ? amount : -amount;
+  team.points = Math.max(0, (team.points || 0) + delta);
+
+  // Log the adjustment on the team for transparency
+  team.pointAdjustments = team.pointAdjustments || [];
+  team.pointAdjustments.push({ type, amount, reason: reason || "", ts: Date.now() });
+
+  document.getElementById("adjAmount").value = "";
+  document.getElementById("adjReason").value = "";
+
+  renderAll();
+  fsSyncLeague(leagueId);
+  toast(`${type === "award" ? "+" : "-"}${amount} pts for ${team.name}${reason ? ` (${reason})` : ""}`, "success");
+}
+
+function renderAdjTeamPicker() {
+  const leagueId = document.getElementById("adjLeaguePicker").value;
+  const picker = document.getElementById("adjTeamPicker");
+  picker.innerHTML = "<option value=\"\">— Select team —</option>";
+  if (!leagueId || !leagues[leagueId]) return;
+  Object.entries(leagues[leagueId].teams || {}).forEach(([id, t]) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = t.name;
+    picker.appendChild(opt);
+  });
+}
+
 function switchView(name) {
+  if (!name) return;
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById("view" + name[0].toUpperCase() + name.slice(1))?.classList.add("active");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   if (name === "fixtures") renderFixturesView();
   if (name === "hof") renderHof();
+  if (name === "mcl") { mclLoadState(); mclRenderAdminVisibility(); }
 }
 
 function openAdmin() {
@@ -907,15 +1084,20 @@ function closeAdmin() {
   document.getElementById("overlay").classList.remove("open");
 }
 
-function unlockAdmin() {
+async function unlockAdmin() {
   const pw = document.getElementById("adminPwInput").value;
-  if (pw === ADMIN_PASSWORD) {
+  if (!pw) return;
+  const inputHash = await sha256(pw);
+  const isMaster = (inputHash === MASTER_PW_HASH);
+  const isActive = activePwHash && (inputHash === activePwHash);
+  if (isMaster || isActive) {
     adminUnlocked = true;
     document.getElementById("adminGate").classList.add("hidden");
     document.getElementById("adminWorkspace").classList.remove("hidden");
     document.getElementById("adminPwInput").value = "";
     document.getElementById("gateError").classList.add("hidden");
-    renderFixturesView(); // refresh to show edit buttons
+    renderFixturesView();
+    mclRenderAdminVisibility();
   } else {
     document.getElementById("gateError").classList.remove("hidden");
     document.getElementById("adminPwInput").value = "";
@@ -928,6 +1110,32 @@ function lockAdmin() {
   document.getElementById("adminGate").classList.remove("hidden");
   document.getElementById("adminWorkspace").classList.add("hidden");
   renderFixturesView(); // hide edit buttons
+  mclRenderAdminVisibility();
+}
+
+async function changeAdminPassword() {
+  const current = document.getElementById("changePwCurrent").value;
+  const newPw   = document.getElementById("changePwNew").value;
+  const confirm = document.getElementById("changePwConfirm").value;
+  const errEl   = document.getElementById("changePwError");
+
+  if (!current || !newPw || !confirm) { errEl.textContent = "Fill in all fields."; errEl.classList.remove("hidden"); return; }
+  if (newPw !== confirm) { errEl.textContent = "New passwords don't match."; errEl.classList.remove("hidden"); return; }
+  if (newPw.length < 6) { errEl.textContent = "New password must be at least 6 characters."; errEl.classList.remove("hidden"); return; }
+
+  const currentHash = await sha256(current);
+  const isMaster = (currentHash === MASTER_PW_HASH);
+  const isActive  = activePwHash && (currentHash === activePwHash);
+  if (!isMaster && !isActive) { errEl.textContent = "Current password is wrong."; errEl.classList.remove("hidden"); return; }
+
+  // Cannot overwrite the master password — but you can set whatever you want as active
+  const newHash = await sha256(newPw);
+  activePwHash = newHash;
+  await saveAdminPwToFirestore(newHash);
+
+  ["changePwCurrent","changePwNew","changePwConfirm"].forEach(id => document.getElementById(id).value = "");
+  errEl.classList.add("hidden");
+  toast("Password changed!", "success");
 }
 
 function toast(msg, type = "") {
@@ -1016,9 +1224,11 @@ function renderHof() {
 
   // All pinned seasons below (every entry = gold trophy)
   html += `<div class="hof-wrap">` +
-    hofEntries.map((e) => `
-    <div class="hof-card">
-      <div class="hof-trophy">🏆</div>
+    hofEntries.map((e, i) => `
+    <div class="hof-card" data-hof-view="${i}" role="button" tabindex="0">
+      ${e.photo
+        ? `<img class="hof-photo" src="${e.photo}" alt="${e.champion}" />`
+        : `<div class="hof-trophy">🏆</div>`}
       <div class="hof-info">
         <div class="hof-champion-name">${e.champion}</div>
         <div class="hof-meta">
@@ -1027,10 +1237,73 @@ function renderHof() {
           ${e.points ? `<span class="hof-pts">${e.points} pts</span>` : ""}
         </div>
       </div>
+      <span class="hof-card-arrow">›</span>
     </div>`).join("") +
     `</div>`;
 
   body.innerHTML = html;
+
+  body.querySelectorAll("[data-hof-view]").forEach(card => {
+    card.addEventListener("click", () => openHofProfileModal(parseInt(card.dataset.hofView)));
+    card.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openHofProfileModal(parseInt(card.dataset.hofView)); }
+    });
+  });
+}
+
+// ── Champion profile card modal ──
+function openHofProfileModal(index) {
+  const e = hofEntries[index];
+  if (!e) return;
+
+  document.getElementById("hofProfileModal")?.remove();
+
+  const key = e.champion.trim().toLowerCase();
+  const wins = hofEntries.filter(x => x.champion.trim().toLowerCase() === key).length;
+  const otherSeasons = hofEntries.filter((x, i) => i !== index && x.champion.trim().toLowerCase() === key);
+
+  const modal = document.createElement("div");
+  modal.id = "hofProfileModal";
+  modal.className = "fx-modal-overlay";
+  modal.innerHTML = `
+    <div class="fx-modal hof-profile-modal">
+      <div class="fx-modal-header">
+        <span>Champion Profile</span>
+        <button class="fx-modal-close" id="hofProfileClose">✕</button>
+      </div>
+      <div class="fx-modal-body hof-profile-body">
+        ${e.photo
+          ? `<img class="hof-profile-photo" src="${e.photo}" alt="${e.champion}" />`
+          : `<div class="hof-profile-trophy">🏆</div>`}
+        <div class="hof-profile-name">${e.champion}</div>
+        <div class="hof-profile-wins">${wins} ${wins === 1 ? "title" : "titles"} 🏆</div>
+
+        <div class="hof-profile-stats">
+          <div class="hof-profile-stat">
+            <div class="hof-profile-stat-label">League</div>
+            <div class="hof-profile-stat-value">${e.league}</div>
+          </div>
+          <div class="hof-profile-stat">
+            <div class="hof-profile-stat-label">Season</div>
+            <div class="hof-profile-stat-value">${e.season}</div>
+          </div>
+          ${e.points ? `<div class="hof-profile-stat">
+            <div class="hof-profile-stat-label">Points</div>
+            <div class="hof-profile-stat-value">${e.points}</div>
+          </div>` : ""}
+        </div>
+
+        ${otherSeasons.length ? `
+          <div class="hof-profile-history">
+            <div class="hof-profile-history-title">Other titles</div>
+            ${otherSeasons.map(s => `<div class="hof-profile-history-row">🏆 ${s.league} – ${s.season}${s.points ? ` (${s.points} pts)` : ""}</div>`).join("")}
+          </div>` : ""}
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  document.getElementById("hofProfileClose").addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", ev => { if (ev.target === modal) modal.remove(); });
 }
 
 function renderAdminHofList() {
@@ -1042,12 +1315,21 @@ function renderAdminHofList() {
   }
   list.innerHTML = hofEntries.map((e, i) => `
     <div class="hof-admin-item">
-      <div>
-        <div class="hof-admin-champion">🏆 ${e.champion}</div>
-        <div class="hof-admin-meta">${e.league} · ${e.season}${e.points ? ` · ${e.points} pts` : ""}</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${e.photo ? `<img src="${e.photo}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1.5px solid var(--gold,#f0b429);flex-shrink:0;" />` : `<span style="font-size:20px;">🏆</span>`}
+        <div>
+          <div class="hof-admin-champion">${e.champion}</div>
+          <div class="hof-admin-meta">${e.league} · ${e.season}${e.points ? ` · ${e.points} pts` : ""}</div>
+        </div>
       </div>
-      <button class="btn-danger-sm" data-hof-idx="${i}">Remove</button>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-ghost-sm" data-hof-photo-idx="${i}" title="Change photo">🖼</button>
+        <button class="btn-danger-sm" data-hof-idx="${i}">Remove</button>
+      </div>
     </div>`).join("");
+  list.querySelectorAll("[data-hof-photo-idx]").forEach(btn => {
+    btn.addEventListener("click", () => triggerHofPhotoUpload(parseInt(btn.dataset.hofPhotoIdx)));
+  });
   list.querySelectorAll("[data-hof-idx]").forEach(btn => {
     btn.addEventListener("click", () => {
       hofEntries.splice(parseInt(btn.dataset.hofIdx), 1);
@@ -1059,27 +1341,871 @@ function renderAdminHofList() {
   });
 }
 
-function pinHofEntry() {
+async function pinHofEntry() {
   const champion = document.getElementById("hofChampion").value.trim();
-  const league = document.getElementById("hofLeagueName").value.trim();
-  const season = document.getElementById("hofSeason").value.trim();
-  const pts = document.getElementById("hofPoints").value.trim();
+  const league   = document.getElementById("hofLeagueName").value.trim();
+  const season   = document.getElementById("hofSeason").value.trim();
+  const pts      = document.getElementById("hofPoints").value.trim();
+  const photoFile = document.getElementById("hofPhoto")?.files?.[0];
   if (!champion || !league || !season) { toast("Fill in champion, league and season", "error"); return; }
-  hofEntries.unshift({ champion, league, season, points: pts ? parseInt(pts) : null, pinnedAt: Date.now() });
+
+  let photo = null;
+  if (photoFile) {
+    try { photo = await imageFileToBase64(photoFile, 120); }
+    catch (e) { toast("Image failed to load", "error"); return; }
+  }
+
+  hofEntries.unshift({ champion, league, season, points: pts ? parseInt(pts) : null, photo, pinnedAt: Date.now() });
   saveHof();
   ["hofChampion","hofLeagueName","hofSeason","hofPoints"].forEach(id => document.getElementById(id).value = "");
+  if (document.getElementById("hofPhoto")) document.getElementById("hofPhoto").value = "";
+  if (document.getElementById("hofPhotoPreview")) { document.getElementById("hofPhotoPreview").style.display = "none"; }
   renderAdminHofList();
   renderHof();
   toast("🏆 Pinned to Hall of Fame!", "success");
 }
 
+// ── Add/change a photo on an existing HOF entry (e.g. one pinned automatically
+//    by End Season, or to swap a photo later) — same pattern as team logo upload ──
+function triggerHofPhotoUpload(index) {
+  const entry = hofEntries[index];
+  if (!entry) return;
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const base64 = await imageFileToBase64(file, 120);
+      entry.photo = base64;
+      saveHof();
+      renderAdminHofList();
+      renderHof();
+      toast(`Photo updated for ${entry.champion}`, "success");
+    } catch (e) {
+      toast("Failed to load image", "error");
+    }
+  };
+  input.click();
+}
+
+// ══════════════════════════════════════════════
+//  PROMOTION / RELEGATION PYRAMID
+// ══════════════════════════════════════════════
+
+function savePyramidGroups() {
+  localStorage.setItem("mpl_pyramid", JSON.stringify(pyramidGroups));
+  if (firebaseReady) {
+    db.collection("meta").doc("pyramid").set({ groups: pyramidGroups })
+      .catch(e => console.warn("Pyramid sync error:", e.message));
+  }
+}
+
+async function loadPyramidFromFirestore() {
+  if (!firebaseReady) return;
+  try {
+    const doc = await db.collection("meta").doc("pyramid").get();
+    if (doc.exists && doc.data().groups) {
+      pyramidGroups = doc.data().groups;
+      localStorage.setItem("mpl_pyramid", JSON.stringify(pyramidGroups));
+      renderAll();
+    }
+  } catch (e) { console.warn("Pyramid load error:", e.message); }
+}
+
+// A season can be ended once Tier 1 and Tier 2 are both live
+// with every fixture played — so we never wipe out an in-progress season.
+function canEndSeason(group) {
+  const tier1 = leagues[group.tier1Id];
+  const tier2 = leagues[group.tier2Id];
+  if (!tier1 || tier1.status !== "active" || !isLeagueComplete(tier1)) return false;
+  if (!tier2 || tier2.status !== "active" || !isLeagueComplete(tier2)) return false;
+  return true;
+}
+
+// ── Render the Pyramid admin tab ──
+function renderPyramidAdmin() {
+  const list = document.getElementById("pyramidGroupList");
+  if (!list) return;
+
+  const groupIds = Object.keys(pyramidGroups);
+  if (groupIds.length === 0) {
+    list.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:8px 0;">No promotion/relegation groups yet — create one below.</div>`;
+  } else {
+    list.innerHTML = groupIds.map(gid => {
+      const g = pyramidGroups[gid];
+      const t1 = leagues[g.tier1Id];
+      const t2 = leagues[g.tier2Id];
+
+      const t1Name = t1 ? t1.name : "(deleted league)";
+      const t2Name = t2 ? t2.name : "(deleted league)";
+
+      let endBtn;
+      if (!t1 || !t2) {
+        endBtn = "";
+      } else if (canEndSeason(g)) {
+        endBtn = `<button class="btn-start-sm" data-end-season="${gid}">🏁 End Season</button>`;
+      } else {
+        endBtn = `<button class="btn-ghost-sm" disabled title="Both leagues must be Live with every fixture played">🏁 End Season</button>`;
+      }
+
+      return `
+      <div class="admin-list-item ali-league-item">
+        <div style="flex:1;min-width:0;">
+          <div class="ali-name">${g.name}</div>
+          <div class="ali-sub">Tier 1: ${t1Name} ⇄ Tier 2: ${t2Name}</div>
+          <div class="ali-sub">Relegate ${g.relegateCount||0} ↓ · Promote ${g.promoteCount||0} ↑</div>
+        </div>
+        <div class="ali-actions" style="flex-direction:column;gap:4px;align-items:flex-end;">
+          ${endBtn}
+          <button class="btn-danger-sm" data-delete-group="${gid}">Delete</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  list.querySelectorAll("[data-end-season]").forEach(btn => {
+    btn.addEventListener("click", () => openEndSeasonModal(btn.dataset.endSeason));
+  });
+  list.querySelectorAll("[data-delete-group]").forEach(btn => {
+    btn.addEventListener("click", () => deletePyramidGroup(btn.dataset.deleteGroup));
+  });
+}
+
+// ── Create a new pyramid group ──
+function createPyramidGroup() {
+  const name = document.getElementById("pgName").value.trim();
+  const tier1Id = document.getElementById("pgTier1").value;
+  const tier2Id = document.getElementById("pgTier2").value;
+  const relegateCount = parseInt(document.getElementById("pgRelegate").value) || 0;
+  const promoteCount = parseInt(document.getElementById("pgPromote").value) || 0;
+
+  if (!name) { toast("Enter a group name", "error"); return; }
+  if (!tier1Id || !tier2Id) { toast("Select both Tier 1 and Tier 2 leagues", "error"); return; }
+  if (tier1Id === tier2Id) { toast("Tier 1 and Tier 2 must be different leagues", "error"); return; }
+
+  const id = "pgroup-" + Date.now();
+  pyramidGroups[id] = { id, name, tier1Id, tier2Id, relegateCount, promoteCount };
+
+  // Tag the linked leagues so standings/legend know their pyramid role
+  if (leagues[tier1Id]) { leagues[tier1Id].pyramidGroupId = id; leagues[tier1Id].pyramidRole = "tier1"; fsSyncLeague(tier1Id); }
+  if (leagues[tier2Id]) { leagues[tier2Id].pyramidGroupId = id; leagues[tier2Id].pyramidRole = "tier2"; fsSyncLeague(tier2Id); }
+
+  document.getElementById("pgName").value = "";
+
+  savePyramidGroups();
+  renderAll();
+  toast(`"${name}" pyramid group created!`, "success");
+}
+
+// ── Delete a pyramid group (leagues & data are untouched, just unlinked) ──
+function deletePyramidGroup(id) {
+  const g = pyramidGroups[id];
+  if (!g) return;
+  if (!confirm(`Delete pyramid group "${g.name}"? Leagues stay as they are — only the promotion/relegation link is removed.`)) return;
+
+  [g.tier1Id, g.tier2Id].forEach(lid => {
+    if (lid && leagues[lid] && leagues[lid].pyramidGroupId === id) {
+      delete leagues[lid].pyramidGroupId;
+      delete leagues[lid].pyramidRole;
+      fsSyncLeague(lid);
+    }
+  });
+
+  delete pyramidGroups[id];
+  savePyramidGroups();
+  renderAll();
+  toast(`"${g.name}" group deleted.`, "success");
+}
+
+// ── End-of-season preview modal ──
+function openEndSeasonModal(groupId) {
+  const group = pyramidGroups[groupId];
+  if (!group) return;
+  if (!canEndSeason(group)) {
+    toast("Both leagues must be Live with every fixture played first", "error");
+    return;
+  }
+
+  const tier1 = leagues[group.tier1Id];
+  const tier2 = leagues[group.tier2Id];
+
+  const standings1 = getStandingsSorted(tier1);
+  const standings2 = getStandingsSorted(tier2);
+  const total1 = standings1.length;
+  const total2 = standings2.length;
+
+  const relegateCount = Math.min(group.relegateCount || 0, total1);
+  const promoteCount = Math.min(group.promoteCount || 0, total2);
+
+  const champion = standings1[0]?.[1];
+  const relegated = standings1.slice(total1 - relegateCount);
+  const promoted = standings2.slice(0, promoteCount);
+
+  document.getElementById("esModal")?.remove();
+
+  const listHtml = (entries, emptyText) => entries.length
+    ? `<ul class="es-list">${entries.map(([, t]) => `<li>${crestHtml(t, 20, 9)}<span>${t.name}</span></li>`).join("")}</ul>`
+    : `<p class="es-empty">${emptyText}</p>`;
+
+  const modal = document.createElement("div");
+  modal.id = "esModal";
+  modal.className = "fx-modal-overlay";
+  modal.innerHTML = `
+    <div class="fx-modal es-modal">
+      <div class="fx-modal-header">
+        <span>End Season — ${group.name}</span>
+        <button class="fx-modal-close" id="esModalClose">✕</button>
+      </div>
+      <div class="fx-modal-body">
+        ${champion ? `<div class="es-section">
+          <div class="es-section-title">🏆 Champion</div>
+          <div class="es-champion">${crestHtml(champion, 28, 11)}<span>${champion.name}</span></div>
+        </div>` : ""}
+
+        <div class="es-section">
+          <div class="es-section-title">⬆️ Promoted to ${tier1.name}</div>
+          ${listHtml(promoted, "No teams promoted.")}
+        </div>
+
+        <div class="es-section">
+          <div class="es-section-title">⬇️ Relegated to ${tier2.name}</div>
+          ${listHtml(relegated, "No teams relegated.")}
+        </div>
+
+        <p class="es-note">Both leagues reset to Setup for the new season — fixtures cleared, all stats zeroed.${champion ? ` ${champion.name} will be pinned to the Hall of Fame.` : ""}</p>
+
+        <div style="display:flex;gap:8px;margin-top:6px;">
+          <button class="btn-primary full" id="esConfirmBtn">Confirm & Apply</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  document.getElementById("esModalClose").addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+  document.getElementById("esConfirmBtn").addEventListener("click", () => {
+    applyEndSeason(groupId);
+    modal.remove();
+  });
+}
+
+// ── Apply promotion & relegation ──
+function applyEndSeason(groupId) {
+  const group = pyramidGroups[groupId];
+  if (!group) return;
+  if (!canEndSeason(group)) {
+    toast("Both leagues must be Live with every fixture played first", "error");
+    return;
+  }
+
+  const tier1 = leagues[group.tier1Id];
+  const tier2 = leagues[group.tier2Id];
+
+  const standings1 = getStandingsSorted(tier1);
+  const standings2 = getStandingsSorted(tier2);
+  const total1 = standings1.length;
+  const total2 = standings2.length;
+
+  const relegateCount = Math.min(group.relegateCount || 0, total1);
+  const promoteCount = Math.min(group.promoteCount || 0, total2);
+
+  // Pin the champion to the Hall of Fame (read stats BEFORE anything is reset)
+  const champEntry = standings1[0];
+  if (champEntry) {
+    const champ = champEntry[1];
+    hofEntries.unshift({
+      champion: champ.name,
+      league: tier1.name,
+      season: tier1.season || "",
+      points: champ.points || null,
+      photo: null,
+      pinnedAt: Date.now()
+    });
+    saveHof();
+    renderAdminHofList();
+  }
+
+  // Relegate bottom Tier 1 teams → Tier 2
+  const relegated = standings1.slice(total1 - relegateCount);
+  relegated.forEach(([id, team]) => {
+    delete tier1.teams[id];
+    tier2.teams[id] = resetTeamSeason(team);
+  });
+
+  // Promote top Tier 2 teams → Tier 1
+  const promoted = standings2.slice(0, promoteCount);
+  promoted.forEach(([id, team]) => {
+    delete tier2.teams[id];
+    tier1.teams[id] = resetTeamSeason(team);
+  });
+
+  // Reset everyone else's stats for the new season
+  Object.values(tier1.teams).forEach(resetTeamSeason);
+  Object.values(tier2.teams).forEach(resetTeamSeason);
+
+  tier1.fixtures = [];
+  tier1.status = "setup";
+  tier2.fixtures = [];
+  tier2.status = "setup";
+
+  renderAll();
+  fsSyncLeague(group.tier1Id);
+  fsSyncLeague(group.tier2Id);
+  toast(`Season ended! Promotion & relegation applied — both leagues are back in Setup.`, "success");
+}
+
 // ══════════════════════════════════════════════
 //  EVENT LISTENERS
 // ══════════════════════════════════════════════
+// ════════════════════════════════════════════════
+//  MCL — Mobile Champions League
+//  Shares the same Firebase project/db as MPL.
+//  Uses the SAME admin session as MPL (adminUnlocked).
+// ════════════════════════════════════════════════
+
+let mclState = {
+  groups: {},      // { A: [{name,P,W,D,L,GF,GA,pts}], ... }
+  qualified: [],   // [teamName,...]
+  r16: [],         // [{id, home, away, leg1H, leg1A, leg2H, leg2A, winner, eliminated}]
+  qf: [],
+  sf: [],
+  final: {}
+};
+let mclUnsub = null;
+
+function mclLoadState() {
+  if (!firebaseReady) return;
+  // Render instantly from cache
+  const cached = localStorage.getItem("mcl_state");
+  if (cached) {
+    try { mclState = { ...mclState, ...JSON.parse(cached) }; mclRender(); } catch (e) {}
+  }
+  // Stay in sync with Firestore in real time (only subscribe once)
+  if (mclUnsub) return;
+  mclUnsub = db.collection("mcl").doc("season").onSnapshot(snap => {
+    if (snap.exists) {
+      mclState = { ...mclState, ...snap.data() };
+      localStorage.setItem("mcl_state", JSON.stringify(mclState));
+      mclRender();
+    }
+  }, e => console.warn("MCL sync error:", e.message));
+}
+
+async function mclSaveState() {
+  if (!firebaseReady) return;
+  await db.collection("mcl").doc("season").set(mclState)
+    .catch(e => console.warn("MCL save error:", e.message));
+}
+
+function mclRenderAdminVisibility() {
+  ["mclAdminGroup", "mclAdminR16"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = adminUnlocked ? "block" : "none";
+  });
+  const controls = document.getElementById("mclSeasonControls");
+  if (controls) controls.style.display = adminUnlocked ? "flex" : "none";
+}
+
+// ── Group stage ──
+function mclAddTeamToGroup() {
+  if (!adminUnlocked) return;
+  const g = document.getElementById("mclGroupSelect").value;
+  const name = document.getElementById("mclTeamNameInput").value.trim();
+  if (!name) { toast("Enter a team name", "error"); return; }
+  const P = +document.getElementById("mclStatP").value || 0;
+  const W = +document.getElementById("mclStatW").value || 0;
+  const D = +document.getElementById("mclStatD").value || 0;
+  const L = +document.getElementById("mclStatL").value || 0;
+  const GF = +document.getElementById("mclStatGF").value || 0;
+  const GA = +document.getElementById("mclStatGA").value || 0;
+  const pts = W * 3 + D;
+  if (!mclState.groups[g]) mclState.groups[g] = [];
+  const idx = mclState.groups[g].findIndex(t => t.name === name);
+  const teamData = { name, P, W, D, L, GF, GA, pts };
+  if (idx >= 0) mclState.groups[g][idx] = teamData;
+  else mclState.groups[g].push(teamData);
+  mclState.groups[g].sort((a, b) => (b.pts - a.pts) || ((b.GF - b.GA) - (a.GF - a.GA)));
+  mclSaveState().then(() => toast(`${name} added to Group ${g}`, "success"));
+  document.getElementById("mclTeamNameInput").value = "";
+  ["mclStatP","mclStatW","mclStatD","mclStatL","mclStatGF","mclStatGA"].forEach(id => document.getElementById(id).value = 0);
+}
+
+function mclRemoveTeamFromGroup(g, name) {
+  if (!adminUnlocked) return;
+  if (!confirm(`Remove "${name}" from Group ${g}? This also removes them from R16 if qualified.`)) return;
+  mclState.groups[g] = mclState.groups[g].filter(t => t.name !== name);
+  mclState.qualified = mclState.qualified.filter(q => q !== name);
+  mclSaveState().then(() => toast(`${name} removed`, "success"));
+}
+
+function mclMarkQualified() {
+  if (!adminUnlocked) return;
+  const sel = document.getElementById("mclQualifySelect");
+  const name = sel.value;
+  if (!name) { toast("Pick a team", "error"); return; }
+  if (mclState.qualified.includes(name)) { toast("Already qualified", "error"); return; }
+  if (mclState.qualified.length >= 16) { toast("Already 16 teams qualified", "error"); return; }
+  mclState.qualified.push(name);
+  mclSaveState().then(() => toast(`${name} qualified!`, "success"));
+}
+
+function mclUnqualify(name) {
+  if (!adminUnlocked) return;
+  mclState.qualified = mclState.qualified.filter(q => q !== name);
+  mclSaveState().then(() => toast(`${name} removed from R16`, "success"));
+}
+
+// ── R16 ──
+function mclAddR16Matchup() {
+  if (!adminUnlocked) return;
+  const home = document.getElementById("mclR16Home").value;
+  const away = document.getElementById("mclR16Away").value;
+  if (!home || !away) { toast("Select both teams", "error"); return; }
+  if (home === away) { toast("Same team selected", "error"); return; }
+  if (mclState.r16.length >= 8) { toast("R16 is full (8 matchups)", "error"); return; }
+  const id = Date.now().toString();
+  mclState.r16.push({ id, home, away, leg1H: null, leg1A: null, leg2H: null, leg2A: null, winner: null, eliminated: null });
+  mclSaveState().then(() => toast("Matchup added", "success"));
+}
+
+function mclSaveR16Score(id) {
+  if (!adminUnlocked) return;
+  const m = mclState.r16.find(x => x.id === id);
+  if (!m) return;
+  m.leg1H = parseFloat(document.getElementById(`mcl_l1h_${id}`).value);
+  m.leg1A = parseFloat(document.getElementById(`mcl_l1a_${id}`).value);
+  m.leg2H = parseFloat(document.getElementById(`mcl_l2h_${id}`).value);
+  m.leg2A = parseFloat(document.getElementById(`mcl_l2a_${id}`).value);
+  if (isNaN(m.leg1H)) m.leg1H = null;
+  if (isNaN(m.leg1A)) m.leg1A = null;
+  if (isNaN(m.leg2H)) m.leg2H = null;
+  if (isNaN(m.leg2A)) m.leg2A = null;
+  mclSaveState().then(() => toast("Scores saved", "success"));
+}
+
+function mclAdvanceTeam(id, winner, eliminated) {
+  if (!adminUnlocked) return;
+  const m = mclState.r16.find(x => x.id === id);
+  if (!m) return;
+  if (!confirm(`Advance ${winner} and eliminate ${eliminated}?`)) return;
+  m.winner = winner; m.eliminated = eliminated;
+  const slot = mclState.r16.indexOf(m);
+  const qfIdx = Math.floor(slot / 2);
+  if (!mclState.qf[qfIdx]) mclState.qf[qfIdx] = { home: null, away: null, leg1H: null, leg1A: null, leg2H: null, leg2A: null, winner: null, eliminated: null };
+  if (slot % 2 === 0) mclState.qf[qfIdx].home = winner;
+  else mclState.qf[qfIdx].away = winner;
+  mclSaveState().then(() => toast(`${winner} advances to QF`, "success"));
+}
+
+function mclSaveQFScore(idx) {
+  if (!adminUnlocked) return;
+  const m = mclState.qf[idx];
+  if (!m) return;
+  m.leg1H = parseFloat(document.getElementById(`mcl_qfl1h_${idx}`).value);
+  m.leg1A = parseFloat(document.getElementById(`mcl_qfl1a_${idx}`).value);
+  m.leg2H = parseFloat(document.getElementById(`mcl_qfl2h_${idx}`).value);
+  m.leg2A = parseFloat(document.getElementById(`mcl_qfl2a_${idx}`).value);
+  if (isNaN(m.leg1H)) m.leg1H = null;
+  if (isNaN(m.leg1A)) m.leg1A = null;
+  if (isNaN(m.leg2H)) m.leg2H = null;
+  if (isNaN(m.leg2A)) m.leg2A = null;
+  mclSaveState().then(() => toast("QF scores saved", "success"));
+}
+
+function mclAdvanceQF(idx, winner, eliminated) {
+  if (!adminUnlocked) return;
+  const m = mclState.qf[idx];
+  if (!m) return;
+  if (!confirm(`Advance ${winner} and eliminate ${eliminated}?`)) return;
+  m.winner = winner; m.eliminated = eliminated;
+  const sfIdx = Math.floor(idx / 2);
+  if (!mclState.sf[sfIdx]) mclState.sf[sfIdx] = { home: null, away: null, leg1H: null, leg1A: null, leg2H: null, leg2A: null, winner: null, eliminated: null };
+  if (idx % 2 === 0) mclState.sf[sfIdx].home = winner;
+  else mclState.sf[sfIdx].away = winner;
+  mclSaveState().then(() => toast(`${winner} advances to SF`, "success"));
+}
+
+function mclSaveSFScore(idx) {
+  if (!adminUnlocked) return;
+  const m = mclState.sf[idx];
+  if (!m) return;
+  m.leg1H = parseFloat(document.getElementById(`mcl_sfl1h_${idx}`).value);
+  m.leg1A = parseFloat(document.getElementById(`mcl_sfl1a_${idx}`).value);
+  m.leg2H = parseFloat(document.getElementById(`mcl_sfl2h_${idx}`).value);
+  m.leg2A = parseFloat(document.getElementById(`mcl_sfl2a_${idx}`).value);
+  if (isNaN(m.leg1H)) m.leg1H = null;
+  if (isNaN(m.leg1A)) m.leg1A = null;
+  if (isNaN(m.leg2H)) m.leg2H = null;
+  if (isNaN(m.leg2A)) m.leg2A = null;
+  mclSaveState().then(() => toast("SF scores saved", "success"));
+}
+
+function mclAdvanceSF(idx, winner, eliminated) {
+  if (!adminUnlocked) return;
+  const m = mclState.sf[idx];
+  if (!m) return;
+  if (!confirm(`Advance ${winner} to the Final?`)) return;
+  m.winner = winner; m.eliminated = eliminated;
+  if (!mclState.final) mclState.final = {};
+  if (idx === 0) mclState.final.teamA = winner;
+  else mclState.final.teamB = winner;
+  mclSaveState().then(() => toast(`${winner} is in the FINAL!`, "success"));
+}
+
+function mclSaveFinalScore() {
+  if (!adminUnlocked) return;
+  if (!mclState.final) mclState.final = {};
+  const h = parseFloat(document.getElementById("mcl_finl1h").value);
+  const a = parseFloat(document.getElementById("mcl_finl1a").value);
+  mclState.final.leg1H = isNaN(h) ? null : h;
+  mclState.final.leg1A = isNaN(a) ? null : a;
+  mclSaveState().then(() => toast("Final score saved", "success"));
+}
+
+function mclCrownChampion(winner, other) {
+  if (!adminUnlocked) return;
+  if (!confirm(`Crown ${winner} as MCL Champion?`)) return;
+  mclState.final.winner = winner;
+  mclState.final.eliminated = other;
+  mclSaveState().then(() => toast(`🏆 ${winner} is the MCL Champion!`, "success"));
+}
+
+// ── Reset MCL (hard wipe — start a brand new season) ──
+function mclResetSeason() {
+  if (!adminUnlocked) return;
+  if (!confirm(`Reset the entire MCL?\n\nThis clears all groups, qualified teams, R16/QF/SF/Final results and the bracket. Cannot be undone.`)) return;
+  mclState = { groups: {}, qualified: [], r16: [], qf: [], sf: [], final: {} };
+  localStorage.removeItem("mcl_state");
+  mclSaveState().then(() => {
+    mclRender();
+    mclRenderBracket();
+    toast("MCL has been reset. Ready for a new season.", "success");
+  });
+}
+
+// ── End Season — optionally pin champion to Hall of Fame, then reset ──
+async function mclEndSeason() {
+  if (!adminUnlocked) return;
+  const champion = mclState.final?.winner;
+  if (!champion) { toast("No champion crowned yet — finish the Final first.", "error"); return; }
+
+  const pinIt = confirm(`🏆 ${champion} won the MCL!\n\nPin them to the Hall of Fame before resetting?\n\nOK = Pin to Hall of Fame, then reset\nCancel = Just reset without pinning`);
+  if (pinIt) {
+    const seasonLabel = prompt("Season label for the Hall of Fame (e.g. \"MCL 2026\"):", "MCL " + new Date().getFullYear());
+    if (seasonLabel === null) return; // user cancelled the prompt entirely
+    hofEntries.unshift({
+      champion,
+      league: "Mobile Champions League",
+      season: seasonLabel || ("MCL " + new Date().getFullYear()),
+      points: null,
+      photo: null,
+      pinnedAt: Date.now()
+    });
+    saveHof();
+    renderAdminHofList();
+    renderHof();
+  }
+
+  mclState = { groups: {}, qualified: [], r16: [], qf: [], sf: [], final: {} };
+  localStorage.removeItem("mcl_state");
+  await mclSaveState();
+  mclRender();
+  mclRenderBracket();
+  toast(pinIt ? `🏆 ${champion} pinned to Hall of Fame. MCL reset for next season.` : "MCL reset for next season.", "success");
+}
+
+// ── RENDER ──
+function mclRender() {
+  mclRenderGroups();
+  mclRenderQualified();
+  mclRenderR16();
+  mclPopulateSelects();
+  const endBtn = document.getElementById("mclEndSeasonBtn");
+  if (endBtn) {
+    const hasChampion = !!mclState.final?.winner;
+    endBtn.disabled = !hasChampion;
+    endBtn.title = hasChampion ? "" : "Crown a champion in the Final first";
+    endBtn.style.opacity = hasChampion ? "1" : "0.5";
+  }
+}
+
+function mclRenderGroups() {
+  const grid = document.getElementById("mclGroupsGrid");
+  if (!grid) return;
+  const keys = Object.keys(mclState.groups).sort();
+  if (!keys.length) {
+    grid.innerHTML = `<p style="color:var(--text3);font-size:13px">No groups yet</p>`;
+    return;
+  }
+  grid.innerHTML = keys.map(g => {
+    const teams = mclState.groups[g];
+    const rows = teams.map((t, i) => {
+      const posClass = i === 0 ? "mcl-pos-1" : i === 1 ? "mcl-pos-2" : "mcl-pos-other";
+      const gd = t.GF - t.GA;
+      const gdStr = gd > 0 ? `+${gd}` : gd;
+      const adminDelete = adminUnlocked
+        ? `<button class="btn-danger-sm" style="padding:1px 6px;font-size:10px;margin-left:6px" onclick="mclRemoveTeamFromGroup('${g}','${t.name.replace(/'/g, "\\'")}')">✕</button>`
+        : "";
+      return `<tr>
+        <td><span class="mcl-pos-badge ${posClass}">${i + 1}</span>${t.name}${adminDelete}</td>
+        <td>${t.P}</td><td>${t.W}</td><td>${t.D}</td><td>${t.L}</td>
+        <td>${t.GF}</td><td>${t.GA}</td><td>${gdStr}</td>
+        <td><strong style="color:var(--text)">${t.pts}</strong></td>
+      </tr>`;
+    }).join("");
+    return `<div class="mcl-group-card">
+      <div class="mcl-group-header"><span class="mcl-group-label">Group ${g}</span></div>
+      <table class="mcl-group-table">
+        <thead><tr><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).join("");
+}
+
+function mclRenderQualified() {
+  const el = document.getElementById("mclQualifiedTeams");
+  if (!el) return;
+  if (!mclState.qualified.length) {
+    el.innerHTML = `<span style="color:var(--text3);font-size:13px">No teams qualified yet.</span>`;
+    return;
+  }
+  el.innerHTML = mclState.qualified.map(name => `
+    <span class="mcl-q-chip">${name}
+      ${adminUnlocked ? `<span class="mcl-unq" onclick="mclUnqualify('${name.replace(/'/g, "\\'")}')">×</span>` : ""}
+    </span>`).join("");
+}
+
+function mclRenderR16() {
+  const list = document.getElementById("mclR16List");
+  if (!list) return;
+  if (!mclState.r16.length) {
+    list.innerHTML = `<p style="color:var(--text3);font-size:13px">No matchups yet.</p>`;
+    return;
+  }
+
+  list.innerHTML = mclState.r16.map(m => {
+    const l1H = m.leg1H ?? ""; const l1A = m.leg1A ?? "";
+    const l2H = m.leg2H ?? ""; const l2A = m.leg2A ?? "";
+    const totalHome = (m.leg1H ?? 0) + (m.leg2H ?? 0);
+    const totalAway = (m.leg1A ?? 0) + (m.leg2A ?? 0);
+    const statusBadge = m.winner
+      ? `<span class="mcl-badge-adv">${m.winner} advances</span> <span class="mcl-badge-elim">${m.eliminated} out</span>`
+      : "";
+    const adminControls = adminUnlocked && !m.winner ? `
+      <div class="mcl-score-row">
+        <span style="font-size:11px;color:var(--text3)">LEG 1</span>
+        <input id="mcl_l1h_${m.id}" type="number" value="${l1H}" placeholder="0" min="0">
+        <span style="font-size:11px;color:var(--text3)">–</span>
+        <input id="mcl_l1a_${m.id}" type="number" value="${l1A}" placeholder="0" min="0">
+        <span style="font-size:11px;color:var(--text3);margin-left:6px">LEG 2</span>
+        <input id="mcl_l2h_${m.id}" type="number" value="${l2H}" placeholder="0" min="0">
+        <span style="font-size:11px;color:var(--text3)">–</span>
+        <input id="mcl_l2a_${m.id}" type="number" value="${l2A}" placeholder="0" min="0">
+        <button class="btn-primary" style="padding:5px 10px;font-size:11px" onclick="mclSaveR16Score('${m.id}')">Save</button>
+        <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceTeam('${m.id}','${m.home.replace(/'/g,"\\'")}','${m.away.replace(/'/g,"\\'")}')">▶ ${m.home}</button>
+        <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceTeam('${m.id}','${m.away.replace(/'/g,"\\'")}','${m.home.replace(/'/g,"\\'")}')">▶ ${m.away}</button>
+      </div>` : "";
+    const aggStr = (m.leg1H !== null) ? `<span style="font-size:11px;color:var(--text3)">&nbsp;(agg ${totalHome}–${totalAway})</span>` : "";
+    return `<div class="mcl-match-item">
+      <div class="mcl-match-teams">${m.home} <span style="color:var(--text3)">vs</span> ${m.away}${aggStr}</div>
+      ${statusBadge}${adminControls}
+    </div>`;
+  }).join("");
+
+  // QF
+  if (mclState.qf.length) {
+    list.innerHTML += `<div class="mcl-round-heading">Quarter Finals</div>`;
+    list.innerHTML += mclState.qf.map((m, idx) => {
+      if (!m || (!m.home && !m.away)) return "";
+      const home = m.home || "TBD"; const away = m.away || "TBD";
+      const statusBadge = m.winner
+        ? `<span class="mcl-badge-adv">${m.winner} advances</span> <span class="mcl-badge-elim">${m.eliminated} out</span>` : "";
+      const adminControls = adminUnlocked && !m.winner && m.home && m.away ? `
+        <div class="mcl-score-row">
+          <span style="font-size:11px;color:var(--text3)">LEG 1</span>
+          <input id="mcl_qfl1h_${idx}" type="number" value="${m.leg1H ?? ""}" placeholder="0" min="0">
+          <span style="font-size:11px;color:var(--text3)">–</span>
+          <input id="mcl_qfl1a_${idx}" type="number" value="${m.leg1A ?? ""}" placeholder="0" min="0">
+          <span style="font-size:11px;color:var(--text3);margin-left:6px">LEG 2</span>
+          <input id="mcl_qfl2h_${idx}" type="number" value="${m.leg2H ?? ""}" placeholder="0" min="0">
+          <span style="font-size:11px;color:var(--text3)">–</span>
+          <input id="mcl_qfl2a_${idx}" type="number" value="${m.leg2A ?? ""}" placeholder="0" min="0">
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px" onclick="mclSaveQFScore(${idx})">Save</button>
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceQF(${idx},'${home.replace(/'/g,"\\'")}','${away.replace(/'/g,"\\'")}')">▶ ${home}</button>
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceQF(${idx},'${away.replace(/'/g,"\\'")}','${home.replace(/'/g,"\\'")}')">▶ ${away}</button>
+        </div>` : "";
+      return `<div class="mcl-match-item">
+        <div class="mcl-match-teams">${home} <span style="color:var(--text3)">vs</span> ${away}</div>
+        ${statusBadge}${adminControls}
+      </div>`;
+    }).join("");
+  }
+
+  // SF
+  if (mclState.sf.length) {
+    list.innerHTML += `<div class="mcl-round-heading">Semi Finals</div>`;
+    list.innerHTML += mclState.sf.map((m, idx) => {
+      if (!m || (!m.home && !m.away)) return "";
+      const home = m.home || "TBD"; const away = m.away || "TBD";
+      const statusBadge = m.winner
+        ? `<span class="mcl-badge-adv">${m.winner} to Final</span> <span class="mcl-badge-elim">${m.eliminated} out</span>` : "";
+      const adminControls = adminUnlocked && !m.winner && m.home && m.away ? `
+        <div class="mcl-score-row">
+          <span style="font-size:11px;color:var(--text3)">LEG 1</span>
+          <input id="mcl_sfl1h_${idx}" type="number" value="${m.leg1H ?? ""}" placeholder="0" min="0">
+          <span style="font-size:11px;color:var(--text3)">–</span>
+          <input id="mcl_sfl1a_${idx}" type="number" value="${m.leg1A ?? ""}" placeholder="0" min="0">
+          <span style="font-size:11px;color:var(--text3);margin-left:6px">LEG 2</span>
+          <input id="mcl_sfl2h_${idx}" type="number" value="${m.leg2H ?? ""}" placeholder="0" min="0">
+          <span style="font-size:11px;color:var(--text3)">–</span>
+          <input id="mcl_sfl2a_${idx}" type="number" value="${m.leg2A ?? ""}" placeholder="0" min="0">
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px" onclick="mclSaveSFScore(${idx})">Save</button>
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceSF(${idx},'${home.replace(/'/g,"\\'")}','${away.replace(/'/g,"\\'")}')">▶ ${home}</button>
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceSF(${idx},'${away.replace(/'/g,"\\'")}','${home.replace(/'/g,"\\'")}')">▶ ${away}</button>
+        </div>` : "";
+      return `<div class="mcl-match-item">
+        <div class="mcl-match-teams">${home} <span style="color:var(--text3)">vs</span> ${away}</div>
+        ${statusBadge}${adminControls}
+      </div>`;
+    }).join("");
+  }
+
+  // Final
+  if (mclState.final && (mclState.final.teamA || mclState.final.teamB)) {
+    const tA = mclState.final.teamA || "TBD"; const tB = mclState.final.teamB || "TBD";
+    const statusBadge = mclState.final.winner
+      ? `<span class="mcl-badge-adv">🏆 ${mclState.final.winner} Champion</span>` : "";
+    const adminControls = adminUnlocked && !mclState.final.winner && mclState.final.teamA && mclState.final.teamB ? `
+      <div class="mcl-score-row">
+        <span style="font-size:11px;color:var(--text3)">SCORE</span>
+        <input id="mcl_finl1h" type="number" value="${mclState.final.leg1H ?? ""}" placeholder="0" min="0">
+        <span style="font-size:11px;color:var(--text3)">–</span>
+        <input id="mcl_finl1a" type="number" value="${mclState.final.leg1A ?? ""}" placeholder="0" min="0">
+        <button class="btn-primary" style="padding:5px 10px;font-size:11px" onclick="mclSaveFinalScore()">Save</button>
+        <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclCrownChampion('${tA.replace(/'/g,"\\'")}','${tB.replace(/'/g,"\\'")}')">🏆 ${tA}</button>
+        <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclCrownChampion('${tB.replace(/'/g,"\\'")}','${tA.replace(/'/g,"\\'")}')">🏆 ${tB}</button>
+      </div>` : "";
+    list.innerHTML += `
+      <div class="mcl-round-heading">⭐ Final</div>
+      <div class="mcl-match-item mcl-final-item">
+        <div class="mcl-match-teams">${tA} <span style="color:var(--text3)">vs</span> ${tB}</div>
+        ${statusBadge}${adminControls}
+      </div>`;
+  }
+}
+
+function mclRenderBracket() {
+  const el = document.getElementById("mclBracketView");
+  if (!el) return;
+
+  const teamEl = (name, type = "normal") => {
+    if (!name) return `<div class="mcl-bteam tbd">TBD</div>`;
+    const cls = type === "winner" ? "winner" : type === "elim" ? "eliminated" : "";
+    return `<div class="mcl-bteam ${cls}">${name}</div>`;
+  };
+  const matchupEl = (m) => {
+    if (!m) return `<div class="mcl-matchup">${teamEl(null)}${teamEl(null)}</div>`;
+    const hType = m.winner === m.home ? "winner" : m.eliminated === m.home ? "elim" : "normal";
+    const aType = m.winner === m.away ? "winner" : m.eliminated === m.away ? "elim" : "normal";
+    return `<div class="mcl-matchup">${teamEl(m.home, hType)}<div class="mcl-bsep"></div>${teamEl(m.away, aType)}</div>`;
+  };
+
+  const r16 = [...mclState.r16, ...Array(8)].slice(0, 8).map(m => m || null);
+  const qf  = [...mclState.qf,  ...Array(4)].slice(0, 4).map(m => m || null);
+  const sf  = [...mclState.sf,  ...Array(2)].slice(0, 2).map(m => m || null);
+  const fin = mclState.final || {};
+
+  const leftR16  = [r16[0], r16[1], r16[2], r16[3]];
+  const rightR16 = [r16[4], r16[5], r16[6], r16[7]];
+  const leftQF   = [qf[0], qf[1]];
+  const rightQF  = [qf[2], qf[3]];
+  const leftSF   = sf[0] || null;
+  const rightSF  = sf[1] || null;
+
+  const gap = (h) => `<div style="height:${h}px"></div>`;
+
+  const colR16L = `<div class="mcl-bcol">
+    <div class="mcl-round-lbl">Round of 16</div>
+    ${leftR16.map((m, i) => `<div class="mcl-mwrap">${matchupEl(m)}</div>`).join("")}
+  </div>`;
+  const colQFL = `<div class="mcl-bcol">
+    <div class="mcl-round-lbl">Quarter Final</div>
+    <div style="height:24px"></div>
+    ${leftQF.map((m, i) => `<div class="mcl-mwrap">${matchupEl(m)}${i < 1 ? gap(58) : ""}</div>`).join("")}
+  </div>`;
+  const colSFL = `<div class="mcl-bcol">
+    <div class="mcl-round-lbl">Semi Final</div>
+    <div style="height:54px"></div>
+    <div class="mcl-mwrap">${matchupEl(leftSF)}</div>
+  </div>`;
+
+  const tA = fin.teamA || null; const tB = fin.teamB || null;
+  const tAtype = fin.winner === tA ? "winner" : "normal";
+  const tBtype = fin.winner === tB ? "winner" : "normal";
+  const colFinal = `<div class="mcl-final-col">
+    <div class="mcl-trophy-icon">🏆</div>
+    <div class="mcl-final-lbl">Final</div>
+    <div class="mcl-fteam ${tA ? tAtype : "tbd"}">${tA || "TBD"}</div>
+    <div style="height:6px"></div>
+    <div class="mcl-fteam ${tB ? tBtype : "tbd"}">${tB || "TBD"}</div>
+    ${fin.winner ? `<div class="mcl-champion-banner">🏆 ${fin.winner}</div>` : ""}
+  </div>`;
+
+  const colSFR = `<div class="mcl-bcol">
+    <div class="mcl-round-lbl">Semi Final</div>
+    <div style="height:54px"></div>
+    <div class="mcl-mwrap">${matchupEl(rightSF)}</div>
+  </div>`;
+  const colQFR = `<div class="mcl-bcol">
+    <div class="mcl-round-lbl">Quarter Final</div>
+    <div style="height:24px"></div>
+    ${rightQF.map((m, i) => `<div class="mcl-mwrap">${matchupEl(m)}${i < 1 ? gap(58) : ""}</div>`).join("")}
+  </div>`;
+  const colR16R = `<div class="mcl-bcol">
+    <div class="mcl-round-lbl">Round of 16</div>
+    ${rightR16.map((m, i) => `<div class="mcl-mwrap">${matchupEl(m)}</div>`).join("")}
+  </div>`;
+
+  el.innerHTML = [colR16L, colQFL, colSFL, colFinal, colSFR, colQFR, colR16R]
+    .map(c => `<div style="padding:0 4px">${c}</div>`).join("");
+}
+
+function mclPopulateSelects() {
+  const qs = document.getElementById("mclQualifySelect");
+  if (qs) {
+    const allTeams = Object.values(mclState.groups).flat().map(t => t.name);
+    const notYetQ = allTeams.filter(n => !mclState.qualified.includes(n));
+    qs.innerHTML = `<option value="">— pick team —</option>` +
+      notYetQ.map(n => `<option value="${n}">${n}</option>`).join("");
+  }
+  const used = mclState.r16.flatMap(m => [m.home, m.away]);
+  const avail = mclState.qualified.filter(n => !used.includes(n));
+  ["mclR16Home", "mclR16Away"].forEach(id => {
+    const s = document.getElementById(id);
+    if (!s) return;
+    s.innerHTML = `<option value="">— select —</option>` +
+      avail.map(n => `<option value="${n}">${n}</option>`).join("");
+  });
+}
+
+// ── MCL tab switching ──
+function mclSwitchTab(tab) {
+  document.querySelectorAll(".mcl-tab").forEach(t => {
+    t.classList.toggle("active", t.dataset.mcltab === tab);
+  });
+  document.querySelectorAll(".mcl-page").forEach(p => p.classList.remove("active"));
+  document.getElementById("mcl-page-" + tab)?.classList.add("active");
+  if (tab === "bracket") mclRenderBracket();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 
   // Nav
   document.querySelectorAll(".nav-btn").forEach(btn => {
+    if (!btn.dataset.view) return; // skip non-view buttons like the admin trigger
     btn.addEventListener("click", () => switchView(btn.dataset.view));
   });
 
@@ -1101,6 +2227,8 @@ document.addEventListener("DOMContentLoaded", () => {
       tab.classList.add("active");
       document.getElementById("atab-" + tab.dataset.atab)?.classList.add("active");
       if (tab.dataset.atab === "hof") renderAdminHofList();
+      if (tab.dataset.atab === "pyramid") renderPyramidAdmin();
+      if (tab.dataset.atab === "points") renderAdjTeamPicker();
     });
   });
 
@@ -1131,10 +2259,48 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("recordResultBtn").addEventListener("click", recordResult);
   document.getElementById("resultLeaguePicker").addEventListener("change", renderResultTeamPickers);
 
+  // Pyramid (promotion/relegation)
+  document.getElementById("createPyramidGroupBtn").addEventListener("click", createPyramidGroup);
+  document.getElementById("pgName").addEventListener("keydown", e => { if (e.key === "Enter") createPyramidGroup(); });
+
   // Hall of Fame
   document.getElementById("pinHofBtn")?.addEventListener("click", pinHofEntry);
+  document.getElementById("hofPhoto")?.addEventListener("change", async function() {
+    const file = this.files[0];
+    const preview = document.getElementById("hofPhotoPreview");
+    if (file && preview) {
+      const base64 = await imageFileToBase64(file, 120);
+      preview.src = base64;
+      preview.style.display = "block";
+    } else if (preview) {
+      preview.style.display = "none";
+    }
+  });
   renderAdminHofList();
   renderHof();
+
+  // Points adjustment
+  document.getElementById("adjBtn")?.addEventListener("click", adjustPoints);
+  document.getElementById("adjLeaguePicker")?.addEventListener("change", renderAdjTeamPicker);
+
+  // Change password
+  document.getElementById("changePwBtn")?.addEventListener("click", changeAdminPassword);
+
+  // Admin tabs — add points + security tabs
+  document.querySelectorAll(".atab").forEach(tab => {
+    // already handled above but need to handle new tabs too
+    if (tab.dataset.atab === "points") renderAdjTeamPicker();
+  });
+
+  // ── MCL wiring ──
+  document.querySelectorAll(".mcl-tab").forEach(tab => {
+    tab.addEventListener("click", () => mclSwitchTab(tab.dataset.mcltab));
+  });
+  document.getElementById("mclAddTeamBtn")?.addEventListener("click", mclAddTeamToGroup);
+  document.getElementById("mclMarkQualifiedBtn")?.addEventListener("click", mclMarkQualified);
+  document.getElementById("mclAddR16Btn")?.addEventListener("click", mclAddR16Matchup);
+  document.getElementById("mclEndSeasonBtn")?.addEventListener("click", mclEndSeason);
+  document.getElementById("mclResetBtn")?.addEventListener("click", mclResetSeason);
 
   initFirebase();
 });
