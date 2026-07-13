@@ -139,9 +139,66 @@
 
       <!-- MCL inner tabs -->
       <div class="mcl-tabs" id="mclTabs">
+        <button class="mcl-tab" data-mcltab="draw">Draw</button>
         <button class="mcl-tab active" data-mcltab="group">Group Stage</button>
         <button class="mcl-tab" data-mcltab="r16">R16 / KO</button>
         <button class="mcl-tab" data-mcltab="bracket">Bracket</button>
+      </div>
+
+      <!-- Blind Group Draw -->
+      <div class="mcl-page" id="mcl-page-draw">
+
+        <!-- Admin setup (visible only when adminUnlocked) -->
+        <div class="mcl-admin-block" id="mclAdminDraw" style="display:none">
+          <div class="mcl-admin-card">
+            <div class="mcl-admin-title">Set Up Blind Draw</div>
+            <div class="mcl-form-row" style="flex-wrap:wrap">
+              <select id="mclDrawLeaguePicker" class="field" style="flex:2">
+                <option value="">— Pull team list from league —</option>
+              </select>
+              <input type="number" id="mclDrawGroupSize" class="field" min="2" placeholder="Players per group" style="max-width:150px" />
+              <input type="text" id="mclDrawPassword" class="field" placeholder="Draw password" style="flex:1" />
+            </div>
+            <div class="mcl-form-row">
+              <input type="text" id="mclDrawSeasonName" class="field" placeholder="Season name (e.g. Champions League 2026)" />
+            </div>
+            <div class="mcl-form-row">
+              <button class="btn-primary" id="mclDrawGenerateBtn">Generate Cards &amp; Start Draw</button>
+              <button class="btn-ghost-sm" id="mclDrawToggleBtn">Toggle Open/Closed</button>
+              <button class="btn-danger-sm" id="mclDrawResetBtn">↺ Reset Draw</button>
+            </div>
+            <div class="mcl-draw-stats" id="mclDrawStats"></div>
+            <div class="mcl-draw-msg" id="mclDrawAdminMsg"></div>
+
+            <div class="mcl-admin-title" style="margin-top:14px">Live Picks</div>
+            <table class="mcl-draw-table">
+              <thead><tr><th>Team</th><th>Group</th><th>Time</th></tr></thead>
+              <tbody id="mclDrawPicksBody"><tr><td colspan="3" style="color:var(--text3)">No picks yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Player-facing draw -->
+        <div class="mcl-draw-player" id="mclDrawPlayerArea">
+          <div class="mcl-draw-login" id="mclDrawLogin">
+            <p class="mcl-draw-sub" id="mclDrawSeasonLabel">Enter your team and the draw password</p>
+            <select id="mclDrawTeamPicker" class="field">
+              <option value="">— select your team —</option>
+            </select>
+            <input type="password" id="mclDrawPlayerPassword" class="field" placeholder="Draw password" />
+            <button class="btn-primary full" id="mclDrawEnterBtn">Enter the Draw</button>
+            <p class="mcl-draw-error" id="mclDrawLoginError"></p>
+          </div>
+
+          <div class="mcl-draw-cards-grid" id="mclDrawCardsGrid" style="display:none"></div>
+
+          <div class="mcl-draw-result" id="mclDrawResultBox" style="display:none">
+            <h3 id="mclDrawResultGroup"></h3>
+            <p id="mclDrawResultSub" style="color:var(--text3)"></p>
+          </div>
+
+          <p class="mcl-draw-status" id="mclDrawStatusLine"></p>
+        </div>
       </div>
 
       <!-- Group Stage -->
@@ -260,6 +317,10 @@
         <h3 class="atab-heading">Create New League</h3>
         <input type="text" id="newLeagueName" class="field" placeholder="e.g. MPL Season 1" />
         <input type="text" id="newLeagueSeason" class="field" placeholder="Season / Year (optional)" />
+        <label class="cl-check-label">
+          <input type="checkbox" id="newLeagueIsCL" />
+          <span>⭐ This is the Champions League (gold fixtures styling)</span>
+        </label>
         <button class="btn-primary full" id="createLeagueBtn">+ Create League</button>
 
         <h3 class="atab-heading mt">Existing Leagues</h3>

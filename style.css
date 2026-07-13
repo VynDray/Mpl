@@ -2004,3 +2004,136 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .hof-profile-history-row:last-child { border-bottom: none; }
+
+/* ░░ CHAMPIONS LEAGUE — gold fixtures ░░ */
+.cl-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text2);
+  margin: 8px 0 4px;
+  cursor: pointer;
+}
+.cl-check-label input { width: auto; margin: 0; }
+
+.fx-tab-cl {
+  border-color: rgba(240, 180, 41, 0.4) !important;
+  color: var(--gold) !important;
+}
+.fx-tab-cl.active {
+  background: linear-gradient(135deg, #a9791e, var(--gold)) !important;
+  border-color: var(--gold) !important;
+  color: #1a1200 !important;
+}
+
+.fixtures-body.fx-champions {
+  background: linear-gradient(135deg, #1a1608 0%, #2a2010 50%, #1a1608 100%);
+  border: 1px solid rgba(240, 180, 41, 0.35);
+  border-radius: var(--radius-lg);
+  padding-top: 16px;
+}
+.fx-champions .fx-round {
+  border-color: rgba(240, 180, 41, 0.25);
+}
+.fx-champions .fx-round-header {
+  background: rgba(240, 180, 41, 0.06);
+  border-bottom-color: rgba(240, 180, 41, 0.2);
+}
+.fx-champions .fx-round-title { color: var(--gold); opacity: 0.85; }
+.fx-champions .fx-matches { background: transparent; }
+.fx-champions .fx-match { border-bottom-color: rgba(240, 180, 41, 0.1); }
+.fx-champions .fx-match:hover { background: rgba(240, 180, 41, 0.05); }
+.fx-champions .fx-match.home-win .fx-home .fx-team-name,
+.fx-champions .fx-match.away-win .fx-away .fx-team-name { color: #f5e6b0; }
+
+/* ░░ MCL BLIND DRAW ░░ */
+.mcl-draw-stats {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text2);
+}
+.mcl-draw-msg { font-size: 12px; margin-top: 8px; min-height: 16px; color: var(--green); }
+
+.mcl-draw-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+  font-size: 13px;
+}
+.mcl-draw-table th, .mcl-draw-table td {
+  text-align: left;
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.mcl-draw-table th { color: var(--text3); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+
+.mcl-draw-player {
+  max-width: 640px;
+  margin: 16px auto;
+  text-align: center;
+}
+.mcl-draw-sub { color: var(--text3); font-size: 13px; margin-bottom: 14px; }
+.mcl-draw-login {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  max-width: 380px;
+  margin: 0 auto;
+}
+.mcl-draw-login .field { margin-bottom: 10px; }
+.mcl-draw-error { color: var(--red, #ff5e5e); font-size: 13px; margin-top: 8px; min-height: 16px; }
+.mcl-draw-status { color: var(--text3); font-size: 13px; margin-top: 14px; }
+
+.mcl-draw-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+.mcl-draw-card {
+  aspect-ratio: 2.5 / 3.5;
+  border-radius: 12px;
+  cursor: pointer;
+  perspective: 900px;
+}
+.mcl-draw-card.taken { cursor: not-allowed; opacity: 0.35; filter: grayscale(1); }
+.mcl-draw-card-inner {
+  width: 100%; height: 100%; position: relative;
+  transform-style: preserve-3d; transition: transform 0.6s;
+}
+.mcl-draw-card.flipped .mcl-draw-card-inner { transform: rotateY(180deg); }
+.mcl-draw-card-face {
+  position: absolute; width: 100%; height: 100%; backface-visibility: hidden;
+  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 1rem; text-align: center; padding: 6px;
+}
+.mcl-draw-card-back {
+  background: linear-gradient(135deg, #1e2746, #141a2b);
+  border: 2px solid var(--border); color: var(--gold); font-size: 1.6rem;
+}
+.mcl-draw-card-front {
+  background: linear-gradient(135deg, var(--gold), #c99a1e);
+  color: #1a1200; transform: rotateY(180deg);
+  border: 2px solid var(--gold);
+}
+
+.mcl-draw-result {
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, #1a1608 0%, #2a2010 50%, #1a1608 100%);
+  border: 1px solid rgba(240, 180, 41, 0.35);
+  border-radius: var(--radius-lg);
+}
+.mcl-draw-result h3 { color: var(--gold); font-family: var(--font-display); font-size: 1.4rem; }
+
+.mcl-group-live-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: 0.3px;
+}

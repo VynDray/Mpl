@@ -477,7 +477,7 @@ function renderFixturesView() {
 
   // Render league tabs
   tabsEl.innerHTML = ids.map(id =>
-    `<button class="fx-league-tab ${id === fixturesLeagueId ? 'active' : ''}" data-lid="${id}">${leagues[id].name}</button>`
+    `<button class="fx-league-tab ${id === fixturesLeagueId ? 'active' : ''} ${leagues[id].isChampionsLeague ? 'fx-tab-cl' : ''}" data-lid="${id}">${leagues[id].isChampionsLeague ? '⭐ ' : ''}${leagues[id].name}</button>`
   ).join("");
   tabsEl.querySelectorAll(".fx-league-tab").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -487,7 +487,8 @@ function renderFixturesView() {
   });
 
   const league = leagues[fixturesLeagueId];
-  titleEl.textContent = league.name + " — Fixtures";
+  titleEl.textContent = (league.isChampionsLeague ? "⭐ " : "") + league.name + " — Fixtures";
+  bodyEl.classList.toggle("fx-champions", !!league.isChampionsLeague);
 
   const fixtures = league.fixtures || [];
   if (fixtures.length === 0) {
@@ -606,7 +607,7 @@ function renderAdminLeagueList() {
     return `
     <div class="admin-list-item ali-league-item">
       <div style="flex:1;min-width:0;">
-        <div class="ali-name">${l.name}${pyramidBadgeHtml(l)}</div>
+        <div class="ali-name">${l.isChampionsLeague ? '⭐ ' : ''}${l.name}${pyramidBadgeHtml(l)}</div>
         <div class="ali-sub">${l.season || "No season"} · ${teamCount} teams · <span style="color:${isActive ? 'var(--green)' : 'var(--text3)'}">${isActive ? '● Live' : '○ Setup'}</span></div>
       </div>
       <div class="ali-actions" style="flex-direction:column;gap:4px;align-items:flex-end;">
@@ -614,6 +615,7 @@ function renderAdminLeagueList() {
           ? `<button class="btn-start-sm" data-start-league="${id}">▶ Start</button>`
           : `<button class="btn-reset-sm" data-reset-league="${id}">↺ Reset</button>`
         }
+        <button class="btn-ghost-sm" data-toggle-cl="${id}" title="Toggle Champions League gold styling">${l.isChampionsLeague ? '⭐ Unmark' : '☆ Mark CL'}</button>
         <button class="btn-danger-sm" data-delete-league="${id}">Delete</button>
       </div>
     </div>`;
@@ -627,6 +629,9 @@ function renderAdminLeagueList() {
   });
   list.querySelectorAll("[data-reset-league]").forEach(btn => {
     btn.addEventListener("click", () => resetLeague(btn.dataset.resetLeague));
+  });
+  list.querySelectorAll("[data-toggle-cl]").forEach(btn => {
+    btn.addEventListener("click", () => toggleLeagueCL(btn.dataset.toggleCl));
   });
 }
 
@@ -899,18 +904,29 @@ function triggerLogoUpload(leagueId, teamId) {
 function createLeague() {
   const name = document.getElementById("newLeagueName").value.trim();
   const season = document.getElementById("newLeagueSeason").value.trim();
+  const isCL = document.getElementById("newLeagueIsCL")?.checked || false;
   if (!name) { toast("Enter a league name", "error"); return; }
 
   const id = "league-" + Date.now();
-  leagues[id] = { name, season, status: "setup", teams: {}, fixtures: [] };
+  leagues[id] = { name, season, status: "setup", teams: {}, fixtures: [], isChampionsLeague: isCL };
   activeLeagueId = id;
 
   document.getElementById("newLeagueName").value = "";
   document.getElementById("newLeagueSeason").value = "";
+  if (document.getElementById("newLeagueIsCL")) document.getElementById("newLeagueIsCL").checked = false;
 
   renderAll();
   toast(`"${name}" created!`, "success");
   fsSyncLeague(id);
+}
+
+// ── Toggle Champions League gold styling on an existing league ──
+function toggleLeagueCL(id) {
+  if (!leagues[id]) return;
+  leagues[id].isChampionsLeague = !leagues[id].isChampionsLeague;
+  renderAll();
+  fsSyncLeague(id);
+  toast(leagues[id].isChampionsLeague ? `"${leagues[id].name}" marked as Champions League` : `"${leagues[id].name}" unmarked`, "success");
 }
 
 // ── Delete league ──
@@ -1071,7 +1087,7 @@ function switchView(name) {
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   if (name === "fixtures") renderFixturesView();
   if (name === "hof") renderHof();
-  if (name === "mcl") { mclLoadState(); mclRenderAdminVisibility(); }
+  if (name === "mcl") { mclLoadState(); mclRenderAdminVisibility(); mclDrawInit(); }
 }
 
 function openAdmin() {
@@ -1700,7 +1716,7 @@ async function mclSaveState() {
 }
 
 function mclRenderAdminVisibility() {
-  ["mclAdminGroup", "mclAdminR16"].forEach(id => {
+  ["mclAdminGroup", "mclAdminR16", "mclAdminDraw"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = adminUnlocked ? "block" : "none";
   });
@@ -1854,6 +1870,32 @@ function mclAdvanceSF(idx, winner, eliminated) {
   mclSaveState().then(() => toast(`${winner} is in the FINAL!`, "success"));
 }
 
+function mclGiveBye(stage, idx) {
+  if (!adminUnlocked) return;
+  const arr = stage === "qf" ? mclState.qf : mclState.sf;
+  const m = arr[idx];
+  if (!m) return;
+  if (m.home && m.away) return; // both sides filled — not a bye situation
+  const lone = m.home || m.away;
+  if (!lone) return;
+  if (!confirm(`No opponent for ${lone} yet — advance them automatically with a bye?`)) return;
+
+  m.winner = lone;
+  m.eliminated = null;
+
+  if (stage === "qf") {
+    const sfIdx = Math.floor(idx / 2);
+    if (!mclState.sf[sfIdx]) mclState.sf[sfIdx] = { home: null, away: null, leg1H: null, leg1A: null, leg2H: null, leg2A: null, winner: null, eliminated: null };
+    if (idx % 2 === 0) mclState.sf[sfIdx].home = lone;
+    else mclState.sf[sfIdx].away = lone;
+  } else {
+    if (!mclState.final) mclState.final = {};
+    if (idx === 0) mclState.final.teamA = lone;
+    else mclState.final.teamB = lone;
+  }
+  mclSaveState().then(() => toast(`${lone} advances with a bye (no opponent).`, "success"));
+}
+
 function mclSaveFinalScore() {
   if (!adminUnlocked) return;
   if (!mclState.final) mclState.final = {};
@@ -1917,6 +1959,36 @@ async function mclEndSeason() {
 }
 
 // ── RENDER ──
+// ── Group data helpers — reads from an auto-generated Champions League
+//    group league when the draw has created one, falls back to legacy
+//    manually-entered mclState.groups otherwise ──
+function mclLinkedLeagueId(g) {
+  return "mclgrp-" + g;
+}
+
+function mclGetGroupKeys() {
+  const legacyKeys = Object.keys(mclState.groups || {});
+  const linkedKeys = Object.keys(leagues)
+    .filter(id => id.startsWith("mclgrp-"))
+    .map(id => id.replace("mclgrp-", ""));
+  return [...new Set([...legacyKeys, ...linkedKeys])].sort();
+}
+
+function mclGetGroupTeams(g) {
+  const linkedId = mclLinkedLeagueId(g);
+  if (leagues[linkedId]) {
+    const league = leagues[linkedId];
+    const sorted = getStandingsSorted(league);
+    return sorted.map(([teamId, t]) => ({
+      name: t.name,
+      P: t.played || 0, W: t.won || 0, D: t.drawn || 0, L: t.lost || 0,
+      GF: t.gf || 0, GA: t.ga || 0, pts: t.points || 0,
+      linked: true, leagueId: linkedId, teamId
+    }));
+  }
+  return mclState.groups[g] || [];
+}
+
 function mclRender() {
   mclRenderGroups();
   mclRenderQualified();
@@ -1934,18 +2006,19 @@ function mclRender() {
 function mclRenderGroups() {
   const grid = document.getElementById("mclGroupsGrid");
   if (!grid) return;
-  const keys = Object.keys(mclState.groups).sort();
+  const keys = mclGetGroupKeys();
   if (!keys.length) {
     grid.innerHTML = `<p style="color:var(--text3);font-size:13px">No groups yet</p>`;
     return;
   }
   grid.innerHTML = keys.map(g => {
-    const teams = mclState.groups[g];
+    const teams = mclGetGroupTeams(g);
+    const isLinked = teams.length && teams[0].linked;
     const rows = teams.map((t, i) => {
       const posClass = i === 0 ? "mcl-pos-1" : i === 1 ? "mcl-pos-2" : "mcl-pos-other";
       const gd = t.GF - t.GA;
       const gdStr = gd > 0 ? `+${gd}` : gd;
-      const adminDelete = adminUnlocked
+      const adminDelete = (adminUnlocked && !isLinked)
         ? `<button class="btn-danger-sm" style="padding:1px 6px;font-size:10px;margin-left:6px" onclick="mclRemoveTeamFromGroup('${g}','${t.name.replace(/'/g, "\\'")}')">✕</button>`
         : "";
       return `<tr>
@@ -1955,8 +2028,11 @@ function mclRenderGroups() {
         <td><strong style="color:var(--text)">${t.pts}</strong></td>
       </tr>`;
     }).join("");
+    const linkedNote = isLinked
+      ? `<span class="mcl-group-live-tag" title="Standings pulled live from Fixtures results">⭐ Live from Fixtures</span>`
+      : "";
     return `<div class="mcl-group-card">
-      <div class="mcl-group-header"><span class="mcl-group-label">Group ${g}</span></div>
+      <div class="mcl-group-header"><span class="mcl-group-label">Group ${g}</span>${linkedNote}</div>
       <table class="mcl-group-table">
         <thead><tr><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -2023,7 +2099,8 @@ function mclRenderR16() {
       const home = m.home || "TBD"; const away = m.away || "TBD";
       const statusBadge = m.winner
         ? `<span class="mcl-badge-adv">${m.winner} advances</span> <span class="mcl-badge-elim">${m.eliminated} out</span>` : "";
-      const adminControls = adminUnlocked && !m.winner && m.home && m.away ? `
+      const adminControls = adminUnlocked && !m.winner
+        ? (m.home && m.away ? `
         <div class="mcl-score-row">
           <span style="font-size:11px;color:var(--text3)">LEG 1</span>
           <input id="mcl_qfl1h_${idx}" type="number" value="${m.leg1H ?? ""}" placeholder="0" min="0">
@@ -2036,7 +2113,12 @@ function mclRenderR16() {
           <button class="btn-primary" style="padding:5px 10px;font-size:11px" onclick="mclSaveQFScore(${idx})">Save</button>
           <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceQF(${idx},'${home.replace(/'/g,"\\'")}','${away.replace(/'/g,"\\'")}')">▶ ${home}</button>
           <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceQF(${idx},'${away.replace(/'/g,"\\'")}','${home.replace(/'/g,"\\'")}')">▶ ${away}</button>
-        </div>` : "";
+        </div>` : (m.home || m.away) ? `
+        <div class="mcl-score-row">
+          <span style="font-size:12px;color:var(--text3)">Waiting for an opponent —</span>
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclGiveBye('qf', ${idx})">▶ Give ${(m.home || m.away).replace(/'/g,"\\'")} a bye</button>
+        </div>` : "")
+        : "";
       return `<div class="mcl-match-item">
         <div class="mcl-match-teams">${home} <span style="color:var(--text3)">vs</span> ${away}</div>
         ${statusBadge}${adminControls}
@@ -2052,7 +2134,8 @@ function mclRenderR16() {
       const home = m.home || "TBD"; const away = m.away || "TBD";
       const statusBadge = m.winner
         ? `<span class="mcl-badge-adv">${m.winner} to Final</span> <span class="mcl-badge-elim">${m.eliminated} out</span>` : "";
-      const adminControls = adminUnlocked && !m.winner && m.home && m.away ? `
+      const adminControls = adminUnlocked && !m.winner
+        ? (m.home && m.away ? `
         <div class="mcl-score-row">
           <span style="font-size:11px;color:var(--text3)">LEG 1</span>
           <input id="mcl_sfl1h_${idx}" type="number" value="${m.leg1H ?? ""}" placeholder="0" min="0">
@@ -2065,7 +2148,12 @@ function mclRenderR16() {
           <button class="btn-primary" style="padding:5px 10px;font-size:11px" onclick="mclSaveSFScore(${idx})">Save</button>
           <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceSF(${idx},'${home.replace(/'/g,"\\'")}','${away.replace(/'/g,"\\'")}')">▶ ${home}</button>
           <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclAdvanceSF(${idx},'${away.replace(/'/g,"\\'")}','${home.replace(/'/g,"\\'")}')">▶ ${away}</button>
-        </div>` : "";
+        </div>` : (m.home || m.away) ? `
+        <div class="mcl-score-row">
+          <span style="font-size:12px;color:var(--text3)">Waiting for an opponent —</span>
+          <button class="btn-primary" style="padding:5px 10px;font-size:11px;background:#f0b429;color:#111" onclick="mclGiveBye('sf', ${idx})">▶ Give ${(m.home || m.away).replace(/'/g,"\\'")} a bye</button>
+        </div>` : "")
+        : "";
       return `<div class="mcl-match-item">
         <div class="mcl-match-teams">${home} <span style="color:var(--text3)">vs</span> ${away}</div>
         ${statusBadge}${adminControls}
@@ -2176,7 +2264,7 @@ function mclRenderBracket() {
 function mclPopulateSelects() {
   const qs = document.getElementById("mclQualifySelect");
   if (qs) {
-    const allTeams = Object.values(mclState.groups).flat().map(t => t.name);
+    const allTeams = mclGetGroupKeys().flatMap(g => mclGetGroupTeams(g)).map(t => t.name);
     const notYetQ = allTeams.filter(n => !mclState.qualified.includes(n));
     qs.innerHTML = `<option value="">— pick team —</option>` +
       notYetQ.map(n => `<option value="${n}">${n}</option>`).join("");
@@ -2192,6 +2280,396 @@ function mclPopulateSelects() {
 }
 
 // ── MCL tab switching ──
+// ════════════════════════════════════════════════
+//  MCL BLIND GROUP DRAW
+//  Teams pick a face-down card that assigns them to
+//  an MCL group. Team list is pulled from an existing
+//  league's registered teams — no typing names.
+//  Firestore collections: mcl_draw_config (doc "state"),
+//  mcl_draw_cards, mcl_draw_picks.
+// ════════════════════════════════════════════════
+const MCLD_CONFIG = () => db.collection("mcl_draw_config").doc("state");
+const MCLD_CARDS = () => db.collection("mcl_draw_cards");
+const MCLD_PICKS = () => db.collection("mcl_draw_picks");
+
+let mclDrawConfig = null;
+let mclDrawInitDone = false;
+let mclDrawCurrentTeamId = null;
+let mclDrawCurrentTeamName = null;
+
+function mclDrawInit() {
+  if (!firebaseReady) return;
+  mclDrawPopulateLeaguePicker();
+  if (mclDrawInitDone) return;
+  mclDrawInitDone = true;
+
+  MCLD_CONFIG().onSnapshot(snap => {
+    mclDrawConfig = snap.exists ? snap.data() : null;
+    mclDrawRenderAdminStats();
+    mclDrawRenderPlayerArea();
+  }, e => console.warn("MCL draw config sync error:", e.message));
+
+  MCLD_CARDS().onSnapshot(() => {
+    mclDrawRenderAdminStats();
+    mclDrawRenderCards();
+  }, e => console.warn("MCL draw cards sync error:", e.message));
+
+  MCLD_PICKS().onSnapshot(snap => {
+    mclDrawRenderPicksTable(snap);
+    mclDrawRenderCards();
+  }, e => console.warn("MCL draw picks sync error:", e.message));
+}
+
+function mclDrawPopulateLeaguePicker() {
+  const sel = document.getElementById("mclDrawLeaguePicker");
+  if (!sel) return;
+  const ids = Object.keys(leagues);
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">— Pull team list from league —</option>` +
+    ids.map(id => `<option value="${id}">${leagues[id].isChampionsLeague ? '⭐ ' : ''}${leagues[id].name}</option>`).join("");
+  if (prev && leagues[prev]) sel.value = prev;
+}
+
+async function mclDrawGenerate() {
+  if (!adminUnlocked) return;
+  const leagueId = document.getElementById("mclDrawLeaguePicker").value;
+  const groupSize = parseInt(document.getElementById("mclDrawGroupSize").value);
+  const password = document.getElementById("mclDrawPassword").value.trim();
+  const msgEl = document.getElementById("mclDrawAdminMsg");
+
+  if (!leagueId || !leagues[leagueId]) { msgEl.textContent = "Pick a league to pull teams from."; return; }
+  const teams = Object.entries(leagues[leagueId].teams || {});
+  const totalTeams = teams.length;
+
+  if (!groupSize || totalTeams < groupSize) { msgEl.textContent = "Enter a valid group size — total teams must be at least the group size."; return; }
+  if (totalTeams % groupSize !== 0) {
+    msgEl.textContent = `${totalTeams} teams can't split evenly into groups of ${groupSize}. Try a different size.`;
+    return;
+  }
+  if (!password) { msgEl.textContent = "Set a draw password."; return; }
+
+  const numGroups = totalTeams / groupSize;
+  const groupLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  try {
+    // Remove any group leagues left over from a previous draw
+    for (let g = 0; g < 26; g++) {
+      const letter = groupLetters[g];
+      const oldId = mclLinkedLeagueId(letter);
+      if (leagues[oldId]) {
+        delete leagues[oldId];
+        fsDeleteLeague(oldId);
+      }
+    }
+
+    await mcldClearCollection(MCLD_CARDS());
+    await mcldClearCollection(MCLD_PICKS());
+
+    let cardGroups = [];
+    for (let g = 0; g < numGroups; g++) {
+      const label = groupLetters[g] ?? String(g + 1);
+      for (let i = 0; i < groupSize; i++) cardGroups.push(label);
+    }
+    for (let i = cardGroups.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cardGroups[i], cardGroups[j]] = [cardGroups[j], cardGroups[i]];
+    }
+
+    const batch = db.batch();
+    cardGroups.forEach((group, idx) => {
+      const ref = MCLD_CARDS().doc();
+      batch.set(ref, { group, taken: false, takenBy: null, order: idx });
+    });
+    await batch.commit();
+
+    const passHash = await sha256(password);
+    const seasonName = document.getElementById("mclDrawSeasonName")?.value.trim() || "Champions League";
+    await MCLD_CONFIG().set({
+      leagueId, groupSize, numGroups, totalTeams, seasonName,
+      passwordHash: passHash, active: true
+    });
+
+    msgEl.textContent = `Draw created: ${numGroups} groups of ${groupSize}.`;
+  } catch (e) {
+    console.error(e);
+    msgEl.textContent = "Something went wrong generating the draw.";
+  }
+}
+
+async function mcldClearCollection(col) {
+  const snap = await col.get();
+  const batch = db.batch();
+  snap.forEach(doc => batch.delete(doc.ref));
+  if (!snap.empty) await batch.commit();
+}
+
+async function mclDrawToggleActive() {
+  if (!adminUnlocked || !mclDrawConfig) return;
+  await MCLD_CONFIG().set({ active: !mclDrawConfig.active }, { merge: true });
+}
+
+async function mclDrawReset() {
+  if (!adminUnlocked) return;
+  if (!confirm("This clears every pick, reopens all cards, resets the MCL Group Stage, and deletes this season's group fixtures. Continue?")) return;
+  try {
+    await mcldClearCollection(MCLD_PICKS());
+    const snap = await MCLD_CARDS().get();
+    const batch = db.batch();
+    snap.forEach(doc => batch.update(doc.ref, { taken: false, takenBy: null }));
+    if (!snap.empty) await batch.commit();
+    await MCLD_CONFIG().set({ active: true }, { merge: true });
+
+    const groupLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (let g = 0; g < 26; g++) {
+      const id = mclLinkedLeagueId(groupLetters[g]);
+      if (leagues[id]) { delete leagues[id]; fsDeleteLeague(id); }
+    }
+
+    mclState.groups = {};
+    await mclSaveState();
+    renderAll();
+    toast("Draw reset — groups and fixtures cleared, ready for a new season.", "success");
+  } catch (e) {
+    console.error(e);
+    toast("Reset failed.", "error");
+  }
+}
+
+function mclDrawRenderAdminStats() {
+  const el = document.getElementById("mclDrawStats");
+  if (!el) return;
+  if (!mclDrawConfig) { el.innerHTML = ""; return; }
+  MCLD_CARDS().get().then(snap => {
+    const taken = snap.docs.filter(d => d.data().taken).length;
+    el.innerHTML = `
+      <span>${mclDrawConfig.totalTeams} teams</span>
+      <span>${mclDrawConfig.numGroups} groups</span>
+      <span>${taken}/${snap.size} picked</span>
+      <span style="color:${mclDrawConfig.active ? 'var(--green)' : 'var(--red)'}">${mclDrawConfig.active ? 'OPEN' : 'CLOSED'}</span>`;
+  }).catch(() => {});
+}
+
+function mclDrawRenderPicksTable(snap) {
+  const body = document.getElementById("mclDrawPicksBody");
+  if (!body) return;
+  if (!snap || snap.empty) {
+    body.innerHTML = `<tr><td colspan="3" style="color:var(--text3)">No picks yet</td></tr>`;
+    return;
+  }
+  const rows = [];
+  snap.forEach(doc => {
+    const d = doc.data();
+    const time = d.timestamp?.toDate ? d.timestamp.toDate().toLocaleString() : "–";
+    rows.push({ name: d.teamName, group: d.group, time, ts: d.timestamp?.toMillis?.() || 0 });
+  });
+  rows.sort((a, b) => b.ts - a.ts);
+  body.innerHTML = rows.map(r =>
+    `<tr><td>${escapeHtmlMcld(r.name)}</td><td>Group ${escapeHtmlMcld(r.group)}</td><td>${r.time}</td></tr>`
+  ).join("");
+}
+
+function escapeHtmlMcld(s) {
+  const d = document.createElement("div");
+  d.textContent = s ?? "";
+  return d.innerHTML;
+}
+
+// ── Player-facing area ──
+function mclDrawRenderPlayerArea() {
+  const seasonLabel = document.getElementById("mclDrawSeasonLabel");
+  if (!seasonLabel) return;
+  if (!mclDrawConfig) {
+    seasonLabel.textContent = "The draw hasn't been set up yet. Contact admin.";
+    return;
+  }
+  if (!mclDrawConfig.active) {
+    seasonLabel.textContent = "The draw is currently closed.";
+    return;
+  }
+  seasonLabel.textContent = "Enter your team and the draw password";
+  mclDrawPopulateTeamPicker();
+}
+
+async function mclDrawPopulateTeamPicker() {
+  const sel = document.getElementById("mclDrawTeamPicker");
+  if (!sel || !mclDrawConfig?.leagueId) return;
+  const league = leagues[mclDrawConfig.leagueId];
+  if (!league) return;
+
+  let pickedIds = [];
+  try {
+    const picksSnap = await MCLD_PICKS().get();
+    pickedIds = picksSnap.docs.map(d => d.id);
+  } catch (e) { /* ignore */ }
+
+  const teams = Object.entries(league.teams || {}).filter(([id]) => !pickedIds.includes(id));
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">— select your team —</option>` +
+    teams.map(([id, t]) => `<option value="${id}">${t.name}</option>`).join("");
+  if (prev && teams.some(([id]) => id === prev)) sel.value = prev;
+}
+
+async function mclDrawEnter() {
+  const errEl = document.getElementById("mclDrawLoginError");
+  errEl.textContent = "";
+  const teamId = document.getElementById("mclDrawTeamPicker").value;
+  const password = document.getElementById("mclDrawPlayerPassword").value;
+  if (!teamId || !password) { errEl.textContent = "Select your team and enter the draw password."; return; }
+  if (!mclDrawConfig) { errEl.textContent = "The draw hasn't been set up yet."; return; }
+  if (!mclDrawConfig.active) { errEl.textContent = "The draw is currently closed."; return; }
+
+  const league = leagues[mclDrawConfig.leagueId];
+  const team = league?.teams?.[teamId];
+  if (!team) { errEl.textContent = "Couldn't find that team — refresh and try again."; return; }
+
+  const passHash = await sha256(password);
+  if (passHash !== mclDrawConfig.passwordHash) { errEl.textContent = "Incorrect password."; return; }
+
+  mclDrawCurrentTeamId = teamId;
+  mclDrawCurrentTeamName = team.name;
+
+  // Already picked?
+  try {
+    const pickDoc = await MCLD_PICKS().doc(teamId).get();
+    if (pickDoc.exists) {
+      document.getElementById("mclDrawLogin").style.display = "none";
+      mclDrawShowResult(pickDoc.data().group, true);
+      return;
+    }
+  } catch (e) { /* fall through */ }
+
+  document.getElementById("mclDrawLogin").style.display = "none";
+  mclDrawRenderCards();
+}
+
+function mclDrawRenderCards() {
+  const grid = document.getElementById("mclDrawCardsGrid");
+  if (!grid || !mclDrawCurrentTeamId) return;
+  const loginVisible = document.getElementById("mclDrawLogin").style.display !== "none";
+  if (loginVisible) return;
+
+  MCLD_CARDS().orderBy("order").get().then(snap => {
+    grid.style.display = "grid";
+    grid.innerHTML = "";
+    snap.forEach(doc => {
+      const data = doc.data();
+      const card = document.createElement("div");
+      card.className = "mcl-draw-card" + (data.taken ? " taken flipped" : "");
+      card.innerHTML = `
+        <div class="mcl-draw-card-inner">
+          <div class="mcl-draw-card-face mcl-draw-card-back">?</div>
+          <div class="mcl-draw-card-face mcl-draw-card-front">${data.taken ? "Group " + escapeHtmlMcld(data.group) : ""}</div>
+        </div>`;
+      if (!data.taken) card.addEventListener("click", () => mclDrawPickCard(doc.id));
+      grid.appendChild(card);
+    });
+  });
+}
+
+async function mclDrawPickCard(cardId) {
+  const statusEl = document.getElementById("mclDrawStatusLine");
+  statusEl.textContent = "Locking in your pick...";
+  const cardRef = MCLD_CARDS().doc(cardId);
+  const pickRef = MCLD_PICKS().doc(mclDrawCurrentTeamId);
+  const mclRef = db.collection("mcl").doc("season");
+
+  try {
+    const assignedGroup = await db.runTransaction(async (t) => {
+      const pickDoc = await t.get(pickRef);
+      if (pickDoc.exists) throw new Error("ALREADY_PICKED");
+      const cardDoc = await t.get(cardRef);
+      if (!cardDoc.exists || cardDoc.data().taken) throw new Error("CARD_TAKEN");
+      const mclDoc = await t.get(mclRef);
+
+      const group = cardDoc.data().group;
+      const currentMcl = mclDoc.exists ? mclDoc.data() : { groups: {}, qualified: [], r16: [], qf: [], sf: [], final: {} };
+      if (!currentMcl.groups) currentMcl.groups = {};
+      if (!currentMcl.groups[group]) currentMcl.groups[group] = [];
+      currentMcl.groups[group].push({ name: mclDrawCurrentTeamName, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, pts: 0 });
+
+      t.update(cardRef, { taken: true, takenBy: mclDrawCurrentTeamName });
+      t.set(pickRef, {
+        teamName: mclDrawCurrentTeamName,
+        group,
+        cardId,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      t.set(mclRef, currentMcl);
+      return group;
+    });
+
+    document.getElementById("mclDrawCardsGrid").style.display = "none";
+    mclDrawShowResult(assignedGroup, false);
+    statusEl.textContent = "";
+    mclDrawCheckGroupFull(assignedGroup);
+  } catch (e) {
+    console.error(e);
+    if (e.message === "ALREADY_PICKED") {
+      const p = await MCLD_PICKS().doc(mclDrawCurrentTeamId).get();
+      document.getElementById("mclDrawCardsGrid").style.display = "none";
+      mclDrawShowResult(p.data().group, true);
+    } else if (e.message === "CARD_TAKEN") {
+      statusEl.textContent = "That card was just taken — pick another.";
+      mclDrawRenderCards();
+    } else {
+      statusEl.textContent = "Something went wrong. Try again.";
+    }
+  }
+}
+
+async function mclDrawCheckGroupFull(group) {
+  if (!mclDrawConfig) return;
+  const groupSize = mclDrawConfig.groupSize;
+  const leagueId = mclLinkedLeagueId(group);
+  if (leagues[leagueId]) return; // already created for this group
+
+  let snap;
+  try {
+    snap = await MCLD_PICKS().where("group", "==", group).get();
+  } catch (e) { console.warn("group-full check failed:", e.message); return; }
+  if (snap.size < groupSize) return;
+
+  const poolLeague = leagues[mclDrawConfig.leagueId];
+  if (!poolLeague) return;
+
+  const newTeams = {};
+  snap.docs.forEach(doc => {
+    const teamId = doc.id;
+    const t = poolLeague.teams?.[teamId];
+    if (t) {
+      newTeams[teamId] = {
+        name: t.name, short: t.short, color: t.color, logo: t.logo || null,
+        played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, points: 0, form: []
+      };
+    }
+  });
+  if (Object.keys(newTeams).length < 2) return;
+
+  leagues[leagueId] = {
+    name: `${mclDrawConfig.seasonName || "Champions League"} — Group ${group}`,
+    season: mclDrawConfig.seasonName || "",
+    status: "setup",
+    teams: newTeams,
+    fixtures: [],
+    isChampionsLeague: true
+  };
+  leagues[leagueId].fixtures = generateFixtures(leagueId);
+  leagues[leagueId].status = "active";
+
+  renderAll();
+  fsSyncLeague(leagueId);
+  toast(`Group ${group} is full — gold fixtures generated!`, "success");
+}
+
+function mclDrawShowResult(group, alreadyDone) {
+  const box = document.getElementById("mclDrawResultBox");
+  document.getElementById("mclDrawResultGroup").textContent = `${mclDrawCurrentTeamName || "Your team"} is in Group ${group}`;
+  document.getElementById("mclDrawResultSub").textContent = alreadyDone
+    ? "This team already completed the draw for this season."
+    : "Group locked in. Good luck!";
+  box.style.display = "block";
+}
+
 function mclSwitchTab(tab) {
   document.querySelectorAll(".mcl-tab").forEach(t => {
     t.classList.toggle("active", t.dataset.mcltab === tab);
@@ -2199,6 +2677,7 @@ function mclSwitchTab(tab) {
   document.querySelectorAll(".mcl-page").forEach(p => p.classList.remove("active"));
   document.getElementById("mcl-page-" + tab)?.classList.add("active");
   if (tab === "bracket") mclRenderBracket();
+  if (tab === "draw") mclDrawInit();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -2301,6 +2780,13 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("mclAddR16Btn")?.addEventListener("click", mclAddR16Matchup);
   document.getElementById("mclEndSeasonBtn")?.addEventListener("click", mclEndSeason);
   document.getElementById("mclResetBtn")?.addEventListener("click", mclResetSeason);
+
+  // MCL Blind Draw wiring
+  document.getElementById("mclDrawGenerateBtn")?.addEventListener("click", mclDrawGenerate);
+  document.getElementById("mclDrawToggleBtn")?.addEventListener("click", mclDrawToggleActive);
+  document.getElementById("mclDrawResetBtn")?.addEventListener("click", mclDrawReset);
+  document.getElementById("mclDrawEnterBtn")?.addEventListener("click", mclDrawEnter);
+  document.getElementById("mclDrawPlayerPassword")?.addEventListener("keydown", e => { if (e.key === "Enter") mclDrawEnter(); });
 
   initFirebase();
 });
